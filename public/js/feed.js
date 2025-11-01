@@ -1,3 +1,122 @@
+// API Configuration
+const API_BASE_URL = "http://localhost:3000/api";
+
+// API Functions - לשימוש עתידי
+async function fetchAllContent(searchTerm = "", sortBy = "") {
+  try {
+    let url = `${API_BASE_URL}/content?`;
+    if (searchTerm) url += `search=${encodeURIComponent(searchTerm)}&`;
+    if (sortBy === "name") url += "sort=title:1&";
+    else if (sortBy === "name-desc") url += "sort=title:-1&";
+
+    console.log("Fetching from URL:", url); // דיבוג
+
+    const response = await fetch(url);
+    if (!response.ok) {
+      console.error("API Error:", response.status, response.statusText);
+      throw new Error("Network response was not ok");
+    }
+    const data = await response.json();
+    console.log("API Response:", data); // דיבוג
+    return data.data || [];
+  } catch (error) {
+    console.error("Error fetching content:", error);
+    return [];
+  }
+}
+
+async function fetchTVShows(searchTerm = "", sortBy = "") {
+  try {
+    let url = `${API_BASE_URL}/content?type=series&`;
+    if (searchTerm) url += `search=${encodeURIComponent(searchTerm)}&`;
+    if (sortBy === "name") url += "sort=title:1&";
+    else if (sortBy === "name-desc") url += "sort=title:-1&";
+
+    const response = await fetch(url);
+    if (!response.ok) throw new Error("Network response was not ok");
+    const data = await response.json();
+    return data.data || [];
+  } catch (error) {
+    console.error("Error fetching TV shows:", error);
+    return [];
+  }
+}
+
+async function fetchMovies(searchTerm = "", sortBy = "") {
+  try {
+    let url = `${API_BASE_URL}/content?type=movie&`;
+    if (searchTerm) url += `search=${encodeURIComponent(searchTerm)}&`;
+    if (sortBy === "name") url += "sort=title:1&";
+    else if (sortBy === "name-desc") url += "sort=title:-1&";
+
+    const response = await fetch(url);
+    if (!response.ok) throw new Error("Network response was not ok");
+    const data = await response.json();
+    return data.data || [];
+  } catch (error) {
+    console.error("Error fetching movies:", error);
+    return [];
+  }
+}
+
+async function fetchPopularContent() {
+  try {
+    const response = await fetch(`${API_BASE_URL}/content/popular`);
+    if (!response.ok) throw new Error("Network response was not ok");
+    const data = await response.json();
+    return data.data || [];
+  } catch (error) {
+    console.error("Error fetching popular content:", error);
+    return [];
+  }
+}
+
+async function updateLike(contentId, isLiked) {
+  try {
+    const response = await fetch(`${API_BASE_URL}/content/${contentId}/like`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ add: isLiked }),
+    });
+    if (!response.ok) throw new Error("Network response was not ok");
+    return await response.json();
+  } catch (error) {
+    console.error("Error updating like status:", error);
+    return null;
+  }
+}
+
+// פונקציה לטעינת נתונים מה-API (תשמש בעתיד)
+async function loadInitialData() {
+  try {
+    // הצגת מצב טעינה (לא פעיל עדיין)
+    console.log("Loading data from API...");
+
+    // טעינת הנתונים מה-API
+    const apiContent = await fetchAllContent();
+    const apiTvShows = await fetchTVShows();
+    const apiMovies = await fetchMovies();
+    const apiPopular = await fetchPopularContent();
+
+    // אחסון במשתנים זמניים (לא משמשים עדיין)
+    window.apiData = {
+      content: apiContent,
+      tvShows: apiTvShows,
+      movies: apiMovies,
+      popular: apiPopular,
+    };
+
+    console.log("API data loaded successfully:", window.apiData);
+    return true;
+  } catch (error) {
+    console.error("Failed to load data from API:", error);
+    return false;
+  }
+}
+
+// Original code continues below
 // TV Shows list
 const tvShows = [
   {
@@ -222,6 +341,14 @@ document.addEventListener("DOMContentLoaded", function () {
   profileName.textContent = currentProfile.name;
   menuProfileImage.src = currentProfile.image;
 
+  // טעינת נתונים מה-API במקביל לנתונים הסטטיים
+  // לא משנה את הפונקציונליות הקיימת בשלב זה
+  // תצוגה ראשונית של נתונים מה-API בטעינת הדף
+  const activeCategory = document
+    .querySelector(".nav-link.active")
+    .getAttribute("data-category");
+  displayContent(activeCategory);
+
   // Search icon functionality
   const searchIcon = document.querySelector(".search-icon");
   const searchInputContainer = document.querySelector(
@@ -249,7 +376,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
   // Navigation functionality
   // Function to display content
-  function displayContent(category) {
+  async function displayContent(category) {
     // First, hide all containers
     document.querySelectorAll(".category-container").forEach((container) => {
       container.style.display = "none";
@@ -262,81 +389,154 @@ document.addEventListener("DOMContentLoaded", function () {
       const grid = container.querySelector(".content-grid");
       grid.innerHTML = ""; // Clear existing content
 
-      // Choose which content to display
-      let contentToShow = [];
-      if (category === "tvshows") {
-        contentToShow = tvShows;
-      } else if (category === "movies") {
-        contentToShow = movies;
-      } else {
-        contentToShow = contentData;
-      }
+      // Show loading state
+      grid.innerHTML = `<div class="loading">Loading content...</div>`;
 
-      // Apply search filter
-      const searchTerm = searchInput.value.toLowerCase();
-      if (searchTerm) {
-        contentToShow = contentToShow.filter(
-          (item) =>
-            item.title.toLowerCase().includes(searchTerm) ||
-            item.genre.toLowerCase().includes(searchTerm)
-        );
-      }
+      try {
+        // Choose which content to display - from API
+        let contentToShow = [];
+        const searchTerm = searchInput.value.toLowerCase();
+        const sortType = sortSelect.value;
 
-      // Apply sort
-      const sortType = sortSelect.value;
-      if (sortType === "name") {
-        contentToShow.sort((a, b) => a.title.localeCompare(b.title));
-      } else if (sortType === "name-desc") {
-        contentToShow.sort((a, b) => b.title.localeCompare(a.title));
-      }
+        if (category === "tvshows") {
+          contentToShow = await fetchTVShows(searchTerm, sortType);
+        } else if (category === "movies") {
+          contentToShow = await fetchMovies(searchTerm, sortType);
+        } else if (category === "popular" || category === "newandpopular") {
+          // שם הקטגוריה שונה בין הממשק למשתמש לבין הקוד
+          contentToShow = await fetchPopularContent();
+        } else {
+          contentToShow = await fetchAllContent(searchTerm, sortType);
+        }
 
-      // Create and append cards
-      contentToShow.forEach((item) => {
-        const card = document.createElement("div");
-        card.className = "content-card";
+        // Clear the loading message
+        grid.innerHTML = "";
 
-        // Check if the item is liked
-        const isLiked = likedContent[item.id];
-        const heartIcon = isLiked ? "❤️" : "🤍";
-        const likeCount = item.likes + (isLiked ? 1 : 0);
+        // If no content was found
+        if (contentToShow.length === 0) {
+          grid.innerHTML = `
+            <div class="no-content">
+              <p>No content found. Try different search criteria.</p>
+            </div>
+          `;
+          return;
+        }
 
-        card.innerHTML = `
-                    <div class="content-info">
-                        <h3 class="content-title">${item.title}</h3>
-                        <div class="content-metadata">
-                            <span class="content-year">${item.year}</span>
-                            <span class="content-genre">${item.genre}</span>
-                        </div>
-                        <button class="like-button ${
-                          isLiked ? "liked" : ""
-                        }" data-id="${item.id}">
-                            <span class="heart">${heartIcon}</span>
-                            <span class="like-count">${likeCount}</span>
-                        </button>
-                    </div>
-                `;
+        // Create and append cards
+        contentToShow.forEach((item) => {
+          const card = document.createElement("div");
+          card.className = "content-card";
 
-        // Add like button functionality
-        const likeButton = card.querySelector(".like-button");
-        likeButton.addEventListener("click", () => {
-          const isLiked = likedContent[item.id];
-          if (isLiked) {
-            delete likedContent[item.id];
-            item.likes--;
-            likeButton.classList.remove("liked");
-            likeButton.querySelector(".heart").textContent = "🤍";
-          } else {
-            likedContent[item.id] = true;
-            item.likes++;
-            likeButton.classList.add("liked");
-            likeButton.querySelector(".heart").textContent = "❤️";
+          // Get image URL and fix path if needed
+          let imageUrl = item.imageUrl || "./posters/placeholder.jpg";
+
+          // Fix image path if it's coming from the API with the wrong path
+          if (imageUrl.startsWith("/assets/posters/")) {
+            imageUrl = imageUrl.replace("/assets/posters/", "./posters/");
           }
-          likeButton.querySelector(".like-count").textContent = item.likes;
-          localStorage.setItem("likedContent", JSON.stringify(likedContent));
-        });
 
-        grid.appendChild(card);
-      });
+          // Format genre display
+          let genreDisplay = "";
+          if (item.genres && item.genres.length > 0) {
+            if (typeof item.genres[0] === "object") {
+              genreDisplay = item.genres.map((g) => g.name).join(", ");
+            } else {
+              genreDisplay = item.genres.join(", ");
+            }
+          } else {
+            genreDisplay = "Unknown Genre";
+          }
+
+          // Check if the item is liked
+          const itemId = item._id; // MongoDB uses _id
+          const isLiked = likedContent[itemId];
+          const heartIcon = isLiked ? "❤️" : "🤍";
+
+          card.innerHTML = `
+            <div class="content-poster">
+              <img src="${imageUrl}" alt="${
+            item.title
+          }" onerror="this.src='./Images/placeholder.jpg'">
+            </div>
+            <div class="content-info">
+              <h3 class="content-title">${item.title}</h3>
+              <div class="content-metadata">
+                <span class="content-year">${item.releaseYear}</span>
+                <span class="content-genre">${genreDisplay}</span>
+              </div>
+              <div class="content-stats">
+                <span class="content-rating">★ ${item.rating || "N/A"}</span>
+                <button class="like-button ${
+                  isLiked ? "liked" : ""
+                }" data-id="${itemId}">
+                  <span class="heart">${heartIcon}</span>
+                  <span class="like-count">${item.likes || 0}</span>
+                </button>
+              </div>
+            </div>
+          `;
+
+          // Make the card clickable to view content details
+          card.addEventListener("click", (e) => {
+            // Prevent click if the like button was clicked
+            if (e.target.closest(".like-button")) return;
+
+            // Navigate to content detail page
+            window.location.href = `./content-detail.html?id=${itemId}`;
+          });
+
+          // Add like button functionality
+          const likeButton = card.querySelector(".like-button");
+          likeButton.addEventListener("click", async (e) => {
+            e.stopPropagation(); // Prevent card click event
+
+            const isCurrentlyLiked = likedContent[itemId];
+            const newLikedState = !isCurrentlyLiked;
+
+            // Optimistic UI update
+            if (newLikedState) {
+              likedContent[itemId] = true;
+              likeButton.classList.add("liked");
+              likeButton.querySelector(".heart").textContent = "❤️";
+              likeButton.querySelector(".like-count").textContent =
+                (parseInt(
+                  likeButton.querySelector(".like-count").textContent
+                ) || 0) + 1;
+            } else {
+              delete likedContent[itemId];
+              likeButton.classList.remove("liked");
+              likeButton.querySelector(".heart").textContent = "🤍";
+              likeButton.querySelector(".like-count").textContent = Math.max(
+                0,
+                (parseInt(
+                  likeButton.querySelector(".like-count").textContent
+                ) || 0) - 1
+              );
+            }
+
+            // Save to localStorage
+            localStorage.setItem("likedContent", JSON.stringify(likedContent));
+
+            // Update on server
+            try {
+              await updateLike(itemId, newLikedState);
+              console.log(`Updated like status for ${item.title}`);
+            } catch (error) {
+              console.error("Failed to update like status:", error);
+            }
+          });
+
+          grid.appendChild(card);
+        });
+      } catch (error) {
+        console.error("Error displaying content:", error);
+        grid.innerHTML = `
+          <div class="error">
+            <p>Error loading content. Please try again later.</p>
+            <p>Details: ${error.message}</p>
+          </div>
+        `;
+      }
     }
   }
 
