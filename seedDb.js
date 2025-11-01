@@ -32,8 +32,8 @@ const movies = [
     type: "movie",
     description: "A beautiful journey through nature's wonders",
     releaseYear: 2023,
-    imageUrl: "/assets/posters/nature.jpg", // פוסטר תואם
-    videoUrl: "/assets/videos/nature.mp4", // סרטון תואם
+    imageUrl: "./posters/nature.jpg", // פוסטר תואם
+    videoUrl: "./videos/nature.mp4", // סרטון תואם
     rating: 8.5,
     duration: 15, // 15 דקות
   },
@@ -42,8 +42,8 @@ const movies = [
     type: "movie",
     description: "Modern city life and architecture",
     releaseYear: 2022,
-    imageUrl: "/assets/posters/urban.jpg", // פוסטר תואם
-    videoUrl: "/assets/videos/urban.mp4", // סרטון תואם
+    imageUrl: "./posters/urban.jpg", // פוסטר תואם
+    videoUrl: "./videos/urban.mp4", // סרטון תואם
     rating: 7.8,
     duration: 12,
   },
@@ -52,8 +52,8 @@ const movies = [
     type: "movie",
     description: "Explore the depths of the ocean",
     releaseYear: 2021,
-    imageUrl: "/assets/posters/ocean.jpg", // פוסטר תואם
-    videoUrl: "/assets/videos/ocean.mp4", // סרטון תואם
+    imageUrl: "./posters/ocean.jpg", // פוסטר תואם
+    videoUrl: "./videos/ocean.mp4", // סרטון תואם
     rating: 9.1,
     duration: 18,
   },
@@ -66,7 +66,8 @@ const series = [
     type: "series",
     description: "Explore wildlife across different continents",
     releaseYear: 2022,
-    imageUrl: "/assets/posters/wildlife.jpg", // פוסטר תואם
+    imageUrl: "./posters/wildlife.jpg", // פוסטר תואם
+    videoUrl: "./videos/wildlife.mp4", // סרטון תואם
     rating: 9.2,
   },
   {
@@ -74,7 +75,8 @@ const series = [
     type: "series",
     description: "Latest technology innovations explained",
     releaseYear: 2023,
-    imageUrl: "/assets/posters/tech.jpg", // פוסטר תואם
+    imageUrl: "./posters/tech.jpg", // פוסטר תואם
+    videoUrl: "./videos/tech.mp4", // סרטון תואם
     rating: 8.7,
   },
 ];
@@ -89,7 +91,7 @@ const episodeTemplates = [
       episodeNumber: 1,
       description: "Exploring the wildlife of African Savanna",
       duration: 22,
-      videoUrl: "/assets/videos/wildlife.mp4", // סרטון תואם לסדרה
+      videoUrl: "./videos/wildlife.mp4", // סרטון תואם לסדרה
     },
     {
       title: "Amazon Rainforest",
@@ -97,7 +99,7 @@ const episodeTemplates = [
       episodeNumber: 2,
       description: "Discovering the Amazon rainforest ecosystem",
       duration: 24,
-      videoUrl: "/assets/videos/wildlife.mp4", // משתמשים באותו סרטון
+      videoUrl: "./videos/wildlife.mp4", // משתמשים באותו סרטון
     },
   ],
   // פרקים לסדרה 2 - Tech Innovations
@@ -108,7 +110,7 @@ const episodeTemplates = [
       episodeNumber: 1,
       description: "How AI is changing our world",
       duration: 20,
-      videoUrl: "/assets/videos/tech.mp4", // סרטון תואם לסדרה
+      videoUrl: "./videos/tech.mp4", // סרטון תואם לסדרה
     },
     {
       title: "Sustainable Tech",
@@ -116,7 +118,7 @@ const episodeTemplates = [
       episodeNumber: 2,
       description: "Technology innovations for sustainability",
       duration: 18,
-      videoUrl: "/assets/videos/tech.mp4", // משתמשים באותו סרטון
+      videoUrl: "./videos/tech.mp4", // משתמשים באותו סרטון
     },
   ],
 ];

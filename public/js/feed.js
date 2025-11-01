@@ -9,9 +9,15 @@ async function fetchAllContent(searchTerm = "", sortBy = "") {
     if (sortBy === "name") url += "sort=title:1&";
     else if (sortBy === "name-desc") url += "sort=title:-1&";
 
+    console.log("Fetching from URL:", url); // דיבוג
+
     const response = await fetch(url);
-    if (!response.ok) throw new Error("Network response was not ok");
+    if (!response.ok) {
+      console.error("API Error:", response.status, response.statusText);
+      throw new Error("Network response was not ok");
+    }
     const data = await response.json();
+    console.log("API Response:", data); // דיבוג
     return data.data || [];
   } catch (error) {
     console.error("Error fetching content:", error);
@@ -396,7 +402,8 @@ document.addEventListener("DOMContentLoaded", function () {
           contentToShow = await fetchTVShows(searchTerm, sortType);
         } else if (category === "movies") {
           contentToShow = await fetchMovies(searchTerm, sortType);
-        } else if (category === "newandpopular") {
+        } else if (category === "popular" || category === "newandpopular") {
+          // שם הקטגוריה שונה בין הממשק למשתמש לבין הקוד
           contentToShow = await fetchPopularContent();
         } else {
           contentToShow = await fetchAllContent(searchTerm, sortType);

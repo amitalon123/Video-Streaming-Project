@@ -45,6 +45,10 @@ const contentSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    videoUrl: {
+      type: String,
+      default: "",
+    },
     cast: [
       {
         name: {

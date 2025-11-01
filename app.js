@@ -16,9 +16,7 @@ app.use(express.static("public"));
 
 // Database connection
 mongoose
-  .connect(
-    `mongodb+srv://gorenedith1_db_user:${process.env.mongoDBp}@clusterone.q2wvkfp.mongodb.net/video-streaming?retryWrites=true&w=majority`
-  )
+  .connect(process.env.DB_URL)
   .then(() => console.log("MongoDB connected"))
   .catch((err) => console.error("MongoDB connection error:", err));
 

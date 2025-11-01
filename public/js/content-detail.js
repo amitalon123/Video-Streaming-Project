@@ -74,11 +74,22 @@ function displayContentDetails(content) {
   
   // Display video if available
   let videoUrl = content.trailerUrl || "";
-  if (content.type === "movie" && content.videoUrl) {
+  
+  // נבדוק אם יש שדה videoUrl בתוכן, ללא קשר לסוג התוכן
+  if (content.videoUrl) {
     videoUrl = content.videoUrl;
-    if (videoUrl.startsWith("/assets/videos/")) {
-      videoUrl = videoUrl.replace("/assets/videos/", "./videos/");
-    }
+    console.log("Found videoUrl:", videoUrl);
+  }
+  
+  // תיקון נתיב הווידאו אם צריך
+  if (videoUrl && videoUrl.startsWith("/assets/videos/")) {
+    videoUrl = videoUrl.replace("/assets/videos/", "./videos/");
+  }
+  
+  // עבור סרטים, נוסיף הדפסת דיבוג לראות אם יש להם videoUrl
+  if (content.type === "movie") {
+    console.log("Movie content:", content);
+    console.log("Video URL for movie:", videoUrl);
   }
   
   const videoSection = videoUrl ? 
