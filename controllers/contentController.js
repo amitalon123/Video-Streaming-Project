@@ -1,4 +1,4 @@
-const Content = require("../../backend/models/content");
+const Content = require("../models/content");
 const mongoose = require("mongoose");
 
 // Get all content with filtering, sorting and pagination options
