@@ -132,53 +132,6 @@ exports.getContentById = async (req, res) => {
   }
 };
 
-// Create new content
-exports.createContent = async (req, res) => {
-  try {
-    const content = await Content.create(req.body);
-    res.status(201).json({ success: true, data: content });
-  } catch (err) {
-    res.status(400).json({ success: false, error: err.message });
-  }
-};
-
-// Update existing content
-exports.updateContent = async (req, res) => {
-  try {
-    const content = await Content.findByIdAndUpdate(req.params.id, req.body, {
-      new: true,
-      runValidators: true,
-    });
-
-    if (!content) {
-      return res
-        .status(404)
-        .json({ success: false, error: "Content not found" });
-    }
-
-    res.json({ success: true, data: content });
-  } catch (err) {
-    res.status(400).json({ success: false, error: err.message });
-  }
-};
-
-// Delete content
-exports.deleteContent = async (req, res) => {
-  try {
-    const content = await Content.findByIdAndDelete(req.params.id);
-
-    if (!content) {
-      return res
-        .status(404)
-        .json({ success: false, error: "Content not found" });
-    }
-
-    res.json({ success: true, data: {} });
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-};
-
 // Update content view count
 exports.updateViews = async (req, res) => {
   try {

@@ -3,17 +3,10 @@ const router = express.Router();
 const contentController = require("../controllers/contentController");
 
 // Basic content routes
-router
-  .route("/")
-  .get(contentController.getAllContent) // Get all content
-  .post(contentController.createContent); // Create new content
+router.route("/").get(contentController.getAllContent); // Get all content
 
 // Routes for specific content
-router
-  .route("/:id")
-  .get(contentController.getContentById) // Get specific content by ID
-  .put(contentController.updateContent) // Update content
-  .delete(contentController.deleteContent); // Delete content
+router.route("/:id").get(contentController.getContentById); // Get specific content by ID
 
 // View count and likes update
 router.put("/:id/views", contentController.updateViews); // Increment view count
