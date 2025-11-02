@@ -1,7 +1,7 @@
 document.addEventListener('DOMContentLoaded', function() {
     // Check if user is already logged in
     if (localStorage.getItem('isLoggedIn')) {
-        window.location.href = './profiles.html';
+        window.location.href = '/profiles';
     }
 
     const loginForm = document.getElementById('loginForm');
@@ -73,7 +73,7 @@ document.addEventListener('DOMContentLoaded', function() {
             localStorage.setItem('userEmail', emailInput.value);
             
             // Redirect to profiles page
-            window.location.href = './profiles.html';
+            window.location.href = '/profiles';
         }
     });
 });

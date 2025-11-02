@@ -165,9 +165,11 @@ function createContentCard(item) {
   card.className = "content-card";
 
   // Get image URL and fix path if needed
-  let imageUrl = item.imageUrl || "./posters/placeholder.jpg";
+  let imageUrl = item.imageUrl || "/posters/placeholder.jpg";
   if (imageUrl.startsWith("/assets/posters/")) {
-    imageUrl = imageUrl.replace("/assets/posters/", "./posters/");
+    imageUrl = imageUrl.replace("/assets/posters/", "/posters/");
+  } else if (imageUrl.startsWith("./posters/")) {
+    imageUrl = imageUrl.replace("./posters/", "/posters/");
   }
 
   // Format genre display
@@ -195,7 +197,7 @@ function createContentCard(item) {
     <div class="content-poster">
       <img src="${imageUrl}" alt="${
     item.title
-  }" onerror="this.src='./Images/placeholder.jpg'">
+  }" onerror="this.src='/Images/placeholder.jpg'">
       ${watchedBadge}
     </div>
     <div class="content-info">
@@ -227,7 +229,7 @@ function createContentCard(item) {
   card.addEventListener("click", (e) => {
     if (e.target.closest(".like-button") || e.target.closest(".watch-button"))
       return;
-    window.location.href = `./content-detail.html?id=${item._id}`;
+    window.location.href = `/content/${item._id}`;
   });
 
   // Like button functionality
@@ -620,12 +622,12 @@ function setupDropdown() {
           console.log("Profile clicked");
           break;
         case "Switch User":
-          window.location.href = "./profiles.html";
+          window.location.href = "/profiles";
           break;
         case "Logout":
           localStorage.removeItem("isLoggedIn");
           localStorage.removeItem("currentProfile");
-          window.location.href = "./login.html";
+          window.location.href = "/login";
           break;
       }
     });
@@ -636,14 +638,14 @@ function setupDropdown() {
 async function initGenrePage() {
   // Check if user is logged in
   if (!localStorage.getItem("isLoggedIn")) {
-    window.location.href = "./login.html";
+    window.location.href = "/login";
     return;
   }
 
   // Get current profile
   const currentProfile = JSON.parse(localStorage.getItem("currentProfile"));
   if (!currentProfile) {
-    window.location.href = "./profiles.html";
+    window.location.href = "/profiles";
     return;
   }
 
@@ -651,7 +653,13 @@ async function initGenrePage() {
   const profileName = document.getElementById("profileName");
   const menuProfileImage = document.getElementById("menuProfileImage");
   profileName.textContent = currentProfile.name;
-  menuProfileImage.src = currentProfile.image;
+
+  // Fix profile image path if needed
+  let profileImageUrl = currentProfile.image || "/Images/placeholder.jpg";
+  if (profileImageUrl.startsWith("./Images/")) {
+    profileImageUrl = profileImageUrl.replace("./Images/", "/Images/");
+  }
+  menuProfileImage.src = profileImageUrl;
 
   // Load watched content
   loadWatchedContent();
@@ -672,7 +680,7 @@ async function initGenrePage() {
         <p style="margin-bottom: 20px; color: #aaa;">
           Please select a genre from the home page to view its content.
         </p>
-        <a href="./feed.html" style="color: #e50914; text-decoration: underline; font-size: 1.1rem;">
+        <a href="/feed" style="color: #e50914; text-decoration: underline; font-size: 1.1rem;">
           ← Back to Browse
         </a>
       </div>
@@ -685,7 +693,7 @@ async function initGenrePage() {
   if (!genre) {
     document.getElementById("genreContentGrid").innerHTML = `
       <div class="error">
-        <p>Genre not found. <a href="./feed.html">Back to Browse</a></p>
+        <p>Genre not found. <a href="/feed">Back to Browse</a></p>
       </div>
     `;
     return;

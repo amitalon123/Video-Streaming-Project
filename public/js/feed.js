@@ -140,9 +140,11 @@ function createHorizontalCard(item) {
   card.className = "content-card";
 
   // Get image URL and fix path if needed
-  let imageUrl = item.imageUrl || "./posters/placeholder.jpg";
+  let imageUrl = item.imageUrl || "/posters/placeholder.jpg";
   if (imageUrl.startsWith("/assets/posters/")) {
-    imageUrl = imageUrl.replace("/assets/posters/", "./posters/");
+    imageUrl = imageUrl.replace("/assets/posters/", "/posters/");
+  } else if (imageUrl.startsWith("./posters/")) {
+    imageUrl = imageUrl.replace("./posters/", "/posters/");
   }
 
   // Check if the item is liked
@@ -154,7 +156,7 @@ function createHorizontalCard(item) {
     <div class="content-poster">
       <img src="${imageUrl}" alt="${
     item.title
-  }" onerror="this.src='./Images/placeholder.jpg'">
+  }" onerror="this.src='/Images/placeholder.jpg'">
     </div>
     <div class="content-info">
       <h3 class="content-title">${item.title}</h3>
@@ -176,7 +178,7 @@ function createHorizontalCard(item) {
   // Make the card clickable
   card.addEventListener("click", (e) => {
     if (e.target.closest(".like-button")) return;
-    window.location.href = `./content-detail.html?id=${itemId}`;
+    window.location.href = `/content/${itemId}`;
   });
 
   // Add like button functionality
@@ -232,6 +234,8 @@ function displayContentInRow(rowElement, contentArray) {
 let isLoadingHomeSections = false;
 
 async function displayHomeSections() {
+  console.log("displayHomeSections called");
+
   // Prevent multiple simultaneous calls
   if (isLoadingHomeSections) {
     console.log("Already loading home sections, skipping...");
@@ -341,7 +345,7 @@ async function displayHomeSections() {
                 <h2 class="section-title genre-link" data-genre-id="${genreId}" style="cursor: pointer;" title="Click to view all ${genre.name} content">
                   ${genre.name}
                 </h2>
-                <a href="./genre.html?id=${genreId}" class="view-all-link" title="View all ${genre.name} content">View All →</a>
+                <a href="/genre?id=${genreId}" class="view-all-link" title="View all ${genre.name} content">View All →</a>
               </div>
               <div class="horizontal-scroll">
                 <div class="content-row" data-genre-id="${genreId}"></div>
@@ -357,7 +361,7 @@ async function displayHomeSections() {
                 <h2 class="section-title genre-link" data-genre-id="${genreId}" style="cursor: pointer;" title="Click to view all ${genre.name} content">
                   ${genre.name}
                 </h2>
-                <a href="./genre.html?id=${genreId}" class="view-all-link" title="View all ${genre.name} content">View All →</a>
+                <a href="/genre?id=${genreId}" class="view-all-link" title="View all ${genre.name} content">View All →</a>
               </div>
               <div class="horizontal-scroll">
                 <div class="content-row" data-genre-id="${genreId}">
@@ -372,7 +376,7 @@ async function displayHomeSections() {
           if (genreLink) {
             genreLink.addEventListener("click", (e) => {
               e.preventDefault();
-              window.location.href = `./genre.html?id=${genreId}`;
+              window.location.href = `/genre?id=${genreId}`;
             });
           }
 
@@ -645,25 +649,37 @@ const movies = [
 const contentData = [...tvShows, ...movies];
 
 document.addEventListener("DOMContentLoaded", function () {
+  console.log("Feed page loaded");
+
   // Check if user is logged in
   if (!localStorage.getItem("isLoggedIn")) {
-    window.location.href = "./login.html";
+    console.log("User not logged in, redirecting to login");
+    window.location.href = "/login";
     return;
   }
 
   // Get current profile
   const currentProfile = JSON.parse(localStorage.getItem("currentProfile"));
   if (!currentProfile) {
-    window.location.href = "./profiles.html";
+    console.log("No profile found, redirecting to profiles");
+    window.location.href = "/profiles";
     return;
   }
+
+  console.log("User logged in, profile:", currentProfile);
 
   // Update profile display
   const profileName = document.getElementById("profileName");
   const menuProfileImage = document.getElementById("menuProfileImage");
 
   profileName.textContent = currentProfile.name;
-  menuProfileImage.src = currentProfile.image;
+
+  // Fix profile image path if needed
+  let profileImageUrl = currentProfile.image || "/Images/placeholder.jpg";
+  if (profileImageUrl.startsWith("./Images/")) {
+    profileImageUrl = profileImageUrl.replace("./Images/", "/Images/");
+  }
+  menuProfileImage.src = profileImageUrl;
 
   // טעינת נתונים מה-API במקביל לנתונים הסטטיים
   // לא משנה את הפונקציונליות הקיימת בשלב זה
@@ -671,6 +687,7 @@ document.addEventListener("DOMContentLoaded", function () {
   const activeCategory = document
     .querySelector(".nav-link.active")
     .getAttribute("data-category");
+  console.log("Active category:", activeCategory);
   displayContent(activeCategory);
 
   // Search icon functionality
@@ -759,11 +776,13 @@ document.addEventListener("DOMContentLoaded", function () {
           card.className = "content-card";
 
           // Get image URL and fix path if needed
-          let imageUrl = item.imageUrl || "./posters/placeholder.jpg";
+          let imageUrl = item.imageUrl || "/posters/placeholder.jpg";
 
           // Fix image path if it's coming from the API with the wrong path
           if (imageUrl.startsWith("/assets/posters/")) {
-            imageUrl = imageUrl.replace("/assets/posters/", "./posters/");
+            imageUrl = imageUrl.replace("/assets/posters/", "/posters/");
+          } else if (imageUrl.startsWith("./posters/")) {
+            imageUrl = imageUrl.replace("./posters/", "/posters/");
           }
 
           // Format genre display
@@ -787,7 +806,7 @@ document.addEventListener("DOMContentLoaded", function () {
             <div class="content-poster">
               <img src="${imageUrl}" alt="${
             item.title
-          }" onerror="this.src='./Images/placeholder.jpg'">
+          }" onerror="this.src='/Images/placeholder.jpg'">
             </div>
             <div class="content-info">
               <h3 class="content-title">${item.title}</h3>
@@ -813,7 +832,7 @@ document.addEventListener("DOMContentLoaded", function () {
             if (e.target.closest(".like-button")) return;
 
             // Navigate to content detail page
-            window.location.href = `./content-detail.html?id=${itemId}`;
+            window.location.href = `/content/${itemId}`;
           });
 
           // Add like button functionality
@@ -945,12 +964,12 @@ document.querySelectorAll(".dropdown-item").forEach((item) => {
         console.log("Profile clicked");
         break;
       case "Switch User":
-        window.location.href = "./profiles.html";
+        window.location.href = "/profiles";
         break;
       case "Logout":
         localStorage.removeItem("isLoggedIn");
         localStorage.removeItem("currentProfile");
-        window.location.href = "./login.html";
+        window.location.href = "/login";
         break;
     }
   });

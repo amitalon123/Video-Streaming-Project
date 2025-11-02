@@ -1,8 +1,18 @@
 // API Configuration
 const API_BASE_URL = "http://localhost:3000/api";
 
-// Get content ID from URL
+// Get content ID from URL path
+// URL format: /content/:id (not /content?id=...)
 function getContentIdFromUrl() {
+  const path = window.location.pathname; // e.g., "/content/69064791bbdeecd4227cf950"
+  const pathParts = path.split("/"); // ["", "content", "69064791bbdeecd4227cf950"]
+  
+  // Find the content ID (the last part after /content/)
+  if (pathParts.length >= 3 && pathParts[1] === "content") {
+    return pathParts[2];
+  }
+  
+  // Fallback: try query string for backwards compatibility
   const urlParams = new URLSearchParams(window.location.search);
   return urlParams.get("id");
 }
@@ -57,9 +67,11 @@ function displayContentDetails(content) {
   const container = document.getElementById("contentDetailContainer");
   
   // Fix image path if necessary
-  let imageUrl = content.imageUrl || "./posters/placeholder.jpg";
+  let imageUrl = content.imageUrl || "/posters/placeholder.jpg";
   if (imageUrl.startsWith("/assets/posters/")) {
-    imageUrl = imageUrl.replace("/assets/posters/", "./posters/");
+    imageUrl = imageUrl.replace("/assets/posters/", "/posters/");
+  } else if (imageUrl.startsWith("./posters/")) {
+    imageUrl = imageUrl.replace("./posters/", "/posters/");
   }
   
   // Format genres
@@ -81,9 +93,11 @@ function displayContentDetails(content) {
     console.log("Found videoUrl:", videoUrl);
   }
   
-  // תיקון נתיב הווידאו אם צריך
+  // Fix video path if necessary
   if (videoUrl && videoUrl.startsWith("/assets/videos/")) {
-    videoUrl = videoUrl.replace("/assets/videos/", "./videos/");
+    videoUrl = videoUrl.replace("/assets/videos/", "/videos/");
+  } else if (videoUrl && videoUrl.startsWith("./videos/")) {
+    videoUrl = videoUrl.replace("./videos/", "/videos/");
   }
   
   // עבור סרטים, נוסיף הדפסת דיבוג לראות אם יש להם videoUrl
@@ -100,7 +114,7 @@ function displayContentDetails(content) {
       </video>
     </div>` :
     `<div class="content-banner">
-      <img src="${imageUrl}" alt="${content.title}" onerror="this.src='./Images/placeholder.jpg'">
+      <img src="${imageUrl}" alt="${content.title}" onerror="this.src='/Images/placeholder.jpg'">
     </div>`;
   
   container.innerHTML = `
@@ -190,7 +204,9 @@ function displaySeasonEpisodes(episodes, seriesTitle) {
     // Fix video path
     let videoUrl = episode.videoUrl || "";
     if (videoUrl.startsWith("/assets/videos/")) {
-      videoUrl = videoUrl.replace("/assets/videos/", "./videos/");
+      videoUrl = videoUrl.replace("/assets/videos/", "/videos/");
+    } else if (videoUrl.startsWith("./videos/")) {
+      videoUrl = videoUrl.replace("./videos/", "/videos/");
     }
     
     return `
@@ -218,14 +234,14 @@ function displaySeasonEpisodes(episodes, seriesTitle) {
 async function initContentDetail() {
   // Check if user is logged in
   if (!localStorage.getItem("isLoggedIn")) {
-    window.location.href = "./login.html";
+    window.location.href = "/login";
     return;
   }
 
   // Get current profile
   const currentProfile = JSON.parse(localStorage.getItem("currentProfile"));
   if (!currentProfile) {
-    window.location.href = "./profiles.html";
+    window.location.href = "/profiles";
     return;
   }
 
@@ -233,13 +249,19 @@ async function initContentDetail() {
   const profileName = document.getElementById("profileName");
   const menuProfileImage = document.getElementById("menuProfileImage");
   profileName.textContent = currentProfile.name;
-  menuProfileImage.src = currentProfile.image;
+  
+  // Fix profile image path if needed
+  let profileImageUrl = currentProfile.image || "/Images/placeholder.jpg";
+  if (profileImageUrl.startsWith("./Images/")) {
+    profileImageUrl = profileImageUrl.replace("./Images/", "/Images/");
+  }
+  menuProfileImage.src = profileImageUrl;
 
   // Get content ID from URL
   const contentId = getContentIdFromUrl();
   if (!contentId) {
     document.getElementById("contentDetailContainer").innerHTML = `
-      <div class="error">Content ID not provided. <a href="./feed.html">Back to Browse</a></div>
+      <div class="error">Content ID not provided. <a href="/feed">Back to Browse</a></div>
     `;
     return;
   }
@@ -248,7 +270,7 @@ async function initContentDetail() {
   const content = await fetchContentDetails(contentId);
   if (!content) {
     document.getElementById("contentDetailContainer").innerHTML = `
-      <div class="error">Content not found. <a href="./feed.html">Back to Browse</a></div>
+      <div class="error">Content not found. <a href="/feed">Back to Browse</a></div>
     `;
     return;
   }
@@ -301,12 +323,12 @@ function setupDropdown() {
           console.log("Profile clicked");
           break;
         case "Switch User":
-          window.location.href = "./profiles.html";
+          window.location.href = "/profiles";
           break;
         case "Logout":
           localStorage.removeItem("isLoggedIn");
           localStorage.removeItem("currentProfile");
-          window.location.href = "./login.html";
+          window.location.href = "/login";
           break;
       }
     });
