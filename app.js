@@ -34,14 +34,19 @@ app.use("/api/admin", require("./routes/adminRoutes"));
 app.use("/api/stats", require("./routes/statisticsRoutes"));
 // app.use('/api/profiles', require('./routes/profileRoutes'));
 
-// Error handling middleware
-app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(500).json({
+// 404 Handler
+app.use((req, res) => {
+  res.status(404).json({
     success: false,
-    message: err.message || "Something went wrong on the server",
+    statusCode: 404,
+    error: "NotFoundError",
+    message: `Route ${req.method} ${req.url} not found`,
   });
 });
+
+// Global Error Handling Middleware
+const errorHandler = require("./middleware/errorHandleMiddleware");
+app.use(errorHandler);
 
 // Start server
 const PORT = process.env.PORT || 3000;
