@@ -36,7 +36,19 @@ async function fetchEpisodes(contentId) {
     const response = await fetch(`${API_BASE_URL}/episodes/content/${contentId}`);
     if (!response.ok) throw new Error("Network response was not ok");
     const data = await response.json();
-    return data.data;
+    
+    // API returns episodes grouped by seasons (seasonMap)
+    // Convert to flat array of all episodes
+    if (data.data && typeof data.data === 'object') {
+      const episodesArray = [];
+      Object.keys(data.data).forEach(season => {
+        episodesArray.push(...data.data[season]);
+      });
+      return episodesArray;
+    }
+    
+    // If it's already an array, return as is
+    return Array.isArray(data.data) ? data.data : [];
   } catch (error) {
     console.error("Error fetching episodes:", error);
     return null;
@@ -60,6 +72,65 @@ function formatRuntime(minutes) {
   const hours = Math.floor(minutes / 60);
   const mins = minutes % 60;
   return hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
+}
+
+// Episode Progress Management
+// Get a unique key for episode progress in localStorage
+function getEpisodeProgressKey(episodeId) {
+  const currentProfile = JSON.parse(localStorage.getItem("currentProfile"));
+  const profileId = currentProfile ? currentProfile.id || currentProfile.name : "default";
+  return `episodeProgress_${profileId}_${episodeId}`;
+}
+
+// Load episode progress from localStorage
+function loadEpisodeProgress(episodeId) {
+  try {
+    const key = getEpisodeProgressKey(episodeId);
+    const progress = localStorage.getItem(key);
+    if (progress) {
+      const progressData = JSON.parse(progress);
+      return {
+        currentTime: progressData.currentTime || 0,
+        duration: progressData.duration || 0,
+        percentage: progressData.percentage || 0,
+        isCompleted: progressData.isCompleted || false
+      };
+    }
+  } catch (error) {
+    console.error("Error loading episode progress:", error);
+  }
+  return { currentTime: 0, duration: 0, percentage: 0, isCompleted: false };
+}
+
+// Save episode progress to localStorage
+function saveEpisodeProgress(episodeId, currentTime, duration) {
+  try {
+    const key = getEpisodeProgressKey(episodeId);
+    const percentage = duration > 0 ? (currentTime / duration) * 100 : 0;
+    const isCompleted = percentage >= 95; // Consider 95%+ as completed
+    
+    const progressData = {
+      currentTime: currentTime,
+      duration: duration,
+      percentage: percentage,
+      isCompleted: isCompleted,
+      lastUpdated: new Date().toISOString()
+    };
+    
+    localStorage.setItem(key, JSON.stringify(progressData));
+  } catch (error) {
+    console.error("Error saving episode progress:", error);
+  }
+}
+
+// Clear episode progress (when user wants to start over)
+function clearEpisodeProgress(episodeId) {
+  try {
+    const key = getEpisodeProgressKey(episodeId);
+    localStorage.removeItem(key);
+  } catch (error) {
+    console.error("Error clearing episode progress:", error);
+  }
 }
 
 // Display content details
@@ -209,17 +280,42 @@ function displaySeasonEpisodes(episodes, seriesTitle) {
       videoUrl = videoUrl.replace("./videos/", "/videos/");
     }
     
+    // Load progress for this episode
+    const episodeId = episode._id || episode.id;
+    const progress = loadEpisodeProgress(episodeId);
+    const progressPercentage = Math.round(progress.percentage);
+    const hasProgress = progress.percentage > 0;
+    const isCompleted = progress.isCompleted;
+    
     return `
-      <div class="episode-card">
-        <h3>${episode.title}</h3>
+      <div class="episode-card" data-episode-id="${episodeId}">
+        <div class="episode-header">
+          <h3>${episode.title}</h3>
+          ${hasProgress ? `
+          <div class="episode-progress-info">
+            <span class="progress-percentage">${progressPercentage}%</span>
+            ${isCompleted ? '<span class="completed-badge">✓ Completed</span>' : ''}
+          </div>
+          ` : ''}
+        </div>
         <div class="episode-number">S${episode.seasonNumber} E${episode.episodeNumber}</div>
         <div class="episode-description">${episode.description}</div>
         <div class="episode-meta">
           <span class="duration">${formatRuntime(episode.duration)}</span>
         </div>
+        ${hasProgress ? `
+        <div class="episode-progress-bar-container">
+          <div class="episode-progress-bar" style="width: ${progressPercentage}%"></div>
+        </div>
+        ` : ''}
         ${videoUrl ? `
         <div class="episode-video">
-          <video controls width="100%">
+          <video 
+            controls 
+            width="100%" 
+            data-episode-id="${episodeId}"
+            data-saved-time="${progress.currentTime}"
+            data-duration="${progress.duration || episode.duration * 60}">
             <source src="${videoUrl}" type="video/mp4">
             Your browser does not support the video tag.
           </video>
@@ -228,6 +324,159 @@ function displaySeasonEpisodes(episodes, seriesTitle) {
       </div>
     `;
   }).join("");
+  
+  // Set up video progress tracking after episodes are rendered
+  setupEpisodeProgressTracking();
+}
+
+// Set up progress tracking for all episode videos
+function setupEpisodeProgressTracking() {
+  const videos = document.querySelectorAll('.episode-video video');
+  
+  videos.forEach(video => {
+    const episodeId = video.getAttribute('data-episode-id');
+    if (!episodeId) return;
+    
+    // Resume from saved position when video is loaded
+    video.addEventListener('loadedmetadata', () => {
+      const savedTime = parseFloat(video.getAttribute('data-saved-time')) || 0;
+      const duration = video.duration || parseFloat(video.getAttribute('data-duration')) || 0;
+      
+      // Only resume if saved time is more than 5 seconds and less than 95% of video
+      if (savedTime > 5 && savedTime < duration * 0.95) {
+        video.currentTime = savedTime;
+        console.log(`Resuming episode ${episodeId} from ${savedTime.toFixed(2)}s`);
+      }
+    });
+    
+    // Save progress periodically while playing
+    let saveProgressInterval;
+    video.addEventListener('play', () => {
+      // Save progress every 5 seconds
+      saveProgressInterval = setInterval(() => {
+        if (!video.paused && !video.ended) {
+          const currentTime = video.currentTime;
+          const duration = video.duration;
+          if (duration > 0) {
+            saveEpisodeProgress(episodeId, currentTime, duration);
+            updateProgressDisplay(episodeId, currentTime, duration);
+          }
+        }
+      }, 5000); // Save every 5 seconds
+    });
+    
+    // Save progress when paused
+    video.addEventListener('pause', () => {
+      const currentTime = video.currentTime;
+      const duration = video.duration;
+      if (duration > 0) {
+        saveEpisodeProgress(episodeId, currentTime, duration);
+        updateProgressDisplay(episodeId, currentTime, duration);
+      }
+      if (saveProgressInterval) {
+        clearInterval(saveProgressInterval);
+      }
+    });
+    
+    // Save progress when video ends
+    video.addEventListener('ended', () => {
+      const duration = video.duration;
+      saveEpisodeProgress(episodeId, duration, duration);
+      updateProgressDisplay(episodeId, duration, duration);
+      if (saveProgressInterval) {
+        clearInterval(saveProgressInterval);
+      }
+    });
+    
+    // Save progress when seeking (user manually changes position)
+    video.addEventListener('seeked', () => {
+      const currentTime = video.currentTime;
+      const duration = video.duration;
+      if (duration > 0) {
+        saveEpisodeProgress(episodeId, currentTime, duration);
+        updateProgressDisplay(episodeId, currentTime, duration);
+      }
+    });
+    
+    // Update progress bar in real-time while playing
+    video.addEventListener('timeupdate', () => {
+      if (!video.paused && !video.ended) {
+        const currentTime = video.currentTime;
+        const duration = video.duration;
+        if (duration > 0) {
+          updateProgressDisplay(episodeId, currentTime, duration);
+        }
+      }
+    });
+  });
+}
+
+// Update progress display (progress bar and percentage)
+function updateProgressDisplay(episodeId, currentTime, duration) {
+  const percentage = duration > 0 ? (currentTime / duration) * 100 : 0;
+  const roundedPercentage = Math.round(percentage);
+  const isCompleted = percentage >= 95;
+  
+  const episodeCard = document.querySelector(`[data-episode-id="${episodeId}"]`);
+  if (!episodeCard) return;
+  
+  // Update progress bar
+  const progressBar = episodeCard.querySelector('.episode-progress-bar');
+  if (progressBar) {
+    progressBar.style.width = `${roundedPercentage}%`;
+  }
+  
+  // Update or create progress percentage
+  let progressInfo = episodeCard.querySelector('.episode-progress-info');
+  if (!progressInfo) {
+    // Create progress info if it doesn't exist
+    const header = episodeCard.querySelector('.episode-header');
+    if (header) {
+      progressInfo = document.createElement('div');
+      progressInfo.className = 'episode-progress-info';
+      header.appendChild(progressInfo);
+    } else {
+      return;
+    }
+  }
+  
+  // Update progress percentage
+  let percentageSpan = progressInfo.querySelector('.progress-percentage');
+  if (!percentageSpan) {
+    percentageSpan = document.createElement('span');
+    percentageSpan.className = 'progress-percentage';
+    progressInfo.insertBefore(percentageSpan, progressInfo.firstChild);
+  }
+  percentageSpan.textContent = `${roundedPercentage}%`;
+  
+  // Update or create completed badge
+  let completedBadge = progressInfo.querySelector('.completed-badge');
+  if (isCompleted && !completedBadge) {
+    completedBadge = document.createElement('span');
+    completedBadge.className = 'completed-badge';
+    completedBadge.textContent = '✓ Completed';
+    progressInfo.appendChild(completedBadge);
+  } else if (!isCompleted && completedBadge) {
+    completedBadge.remove();
+  }
+  
+  // Show progress bar if it doesn't exist
+  let progressBarContainer = episodeCard.querySelector('.episode-progress-bar-container');
+  if (!progressBarContainer && percentage > 0) {
+    progressBarContainer = document.createElement('div');
+    progressBarContainer.className = 'episode-progress-bar-container';
+    const meta = episodeCard.querySelector('.episode-meta');
+    if (meta && meta.nextSibling) {
+      episodeCard.insertBefore(progressBarContainer, meta.nextSibling);
+    } else if (meta) {
+      meta.after(progressBarContainer);
+    }
+    
+    const progressBar = document.createElement('div');
+    progressBar.className = 'episode-progress-bar';
+    progressBar.style.width = `${roundedPercentage}%`;
+    progressBarContainer.appendChild(progressBar);
+  }
 }
 
 // Main function
