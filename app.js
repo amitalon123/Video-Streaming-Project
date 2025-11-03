@@ -2,9 +2,14 @@ const express = require("express");
 const cors = require("cors");
 const morgan = require("morgan");
 const mongoose = require("mongoose");
+const path = require("path");
 require("dotenv").config();
 
 const app = express();
+
+// Set EJS as view engine
+app.set("view engine", "ejs");
+app.set("views", path.join(__dirname, "views"));
 
 // Middleware
 app.use(cors());
@@ -21,18 +26,18 @@ mongoose
   .then(() => console.log("MongoDB connected"))
   .catch((err) => console.error("MongoDB connection error:", err));
 
-// Routes
-app.get("/", (req, res) => {
-  res.json({ message: "Welcome to Video Streaming API" });
-});
+// Root route will be handled by viewRoutes (redirects to /feed)
 
-// Import routes
+// Import API routes
 app.use("/api/content", require("./routes/contentRoutes"));
 app.use("/api/genres", require("./routes/genreRoutes"));
 app.use("/api/episodes", require("./routes/episodeRoutes"));
 app.use("/api/admin", require("./routes/adminRoutes"));
 app.use("/api/stats", require("./routes/statisticsRoutes"));
 // app.use('/api/profiles', require('./routes/profileRoutes'));
+
+// Import view routes (EJS pages)
+app.use("/", require("./routes/viewRoutes"));
 
 // 404 Handler
 app.use((req, res) => {

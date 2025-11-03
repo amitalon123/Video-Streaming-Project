@@ -84,7 +84,7 @@ exports.deleteGenre = async (req, res) => {
   }
 };
 
-// קבלת כל התכנים השייכים לז'אנר מסוים
+// קבלת כל התכנים השייכים לז'אנר מסוים (עם pagination, sorting ו-filtering)
 exports.getContentByGenre = async (req, res) => {
   try {
     const genreId = req.params.id;
@@ -95,14 +95,60 @@ exports.getContentByGenre = async (req, res) => {
       return res.status(404).json({ success: false, error: "Genre not found" });
     }
     
-    // קבלת תכנים לפי ז'אנר
-    const contents = await Content.find({ genres: genreId })
-                                 .sort({ createdAt: -1 });
+    // Pagination parameters
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
+    
+    // Build filter
+    const filter = { genres: genreId };
+    
+    // Filter by content type if provided
+    if (req.query.type && req.query.type !== "all") {
+      filter.type = req.query.type;
+    }
+    
+    // Build sort object
+    let sort = {};
+    if (req.query.sort) {
+      const sortParts = req.query.sort.split(":");
+      if (sortParts.length === 2) {
+        const field = sortParts[0];
+        const order = sortParts[1] === "-1" ? -1 : 1;
+        sort[field] = order;
+      }
+    } else {
+      // Default sort by creation date (newest first)
+      sort = { createdAt: -1 };
+    }
+    
+    // Get total count for pagination
+    const total = await Content.countDocuments(filter);
+    
+    // Get content with pagination and sorting
+    const contents = await Content.find(filter)
+                                 .populate("genres", "name")
+                                 .sort(sort)
+                                 .skip(skip)
+                                 .limit(limit);
+    
+    // Calculate pagination info
+    const totalPages = Math.ceil(total / limit);
+    const hasNextPage = page < totalPages;
+    const hasPrevPage = page > 1;
     
     res.json({ 
       success: true, 
-      count: contents.length, 
+      count: contents.length,
+      total: total,
       genre: genre.name,
+      pagination: {
+        currentPage: page,
+        totalPages: totalPages,
+        limit: limit,
+        hasNextPage: hasNextPage,
+        hasPrevPage: hasPrevPage
+      },
       data: contents 
     });
   } catch (err) {

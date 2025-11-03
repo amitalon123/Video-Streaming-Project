@@ -1,6 +1,9 @@
 // API Configuration
 const API_BASE_URL = "http://localhost:3000/api";
 
+// Global state - liked content from localStorage
+let likedContent = JSON.parse(localStorage.getItem("likedContent")) || {};
+
 // API Functions - לשימוש עתידי
 async function fetchAllContent(searchTerm = "", sortBy = "") {
   try {
@@ -61,12 +64,55 @@ async function fetchMovies(searchTerm = "", sortBy = "") {
 
 async function fetchPopularContent() {
   try {
-    const response = await fetch(`${API_BASE_URL}/content/popular`);
+    const response = await fetch(`${API_BASE_URL}/content/popular/all`);
     if (!response.ok) throw new Error("Network response was not ok");
     const data = await response.json();
     return data.data || [];
   } catch (error) {
     console.error("Error fetching popular content:", error);
+    return [];
+  }
+}
+
+// Fetch newest content
+async function fetchNewestContent() {
+  try {
+    const response = await fetch(
+      `${API_BASE_URL}/content?sort=releaseYear:-1&limit=20`
+    );
+    if (!response.ok) throw new Error("Network response was not ok");
+    const data = await response.json();
+    return data.data || [];
+  } catch (error) {
+    console.error("Error fetching newest content:", error);
+    return [];
+  }
+}
+
+// Fetch content by genre
+async function fetchContentByGenre(genreId) {
+  try {
+    const response = await fetch(`${API_BASE_URL}/genres/${genreId}/content`);
+    if (!response.ok) throw new Error("Network response was not ok");
+    const data = await response.json();
+    return data.data || [];
+  } catch (error) {
+    console.error("Error fetching content by genre:", error);
+    return [];
+  }
+}
+
+// Fetch newest content by genre
+async function fetchNewestByGenre(genreId) {
+  try {
+    const response = await fetch(
+      `${API_BASE_URL}/content/newest/genre/${genreId}`
+    );
+    if (!response.ok) throw new Error("Network response was not ok");
+    const data = await response.json();
+    return data.data || [];
+  } catch (error) {
+    console.error("Error fetching newest content by genre:", error);
     return [];
   }
 }
@@ -85,6 +131,288 @@ async function updateLike(contentId, isLiked) {
   } catch (error) {
     console.error("Error updating like status:", error);
     return null;
+  }
+}
+
+// Create a content card for horizontal row
+function createHorizontalCard(item) {
+  const card = document.createElement("div");
+  card.className = "content-card";
+
+  // Get image URL and fix path if needed
+  let imageUrl = item.imageUrl || "/posters/placeholder.jpg";
+  if (imageUrl.startsWith("/assets/posters/")) {
+    imageUrl = imageUrl.replace("/assets/posters/", "/posters/");
+  } else if (imageUrl.startsWith("./posters/")) {
+    imageUrl = imageUrl.replace("./posters/", "/posters/");
+  }
+
+  // Check if the item is liked
+  const itemId = item._id;
+  const isLiked = likedContent[itemId];
+  const heartIcon = isLiked ? "❤️" : "🤍";
+
+  card.innerHTML = `
+    <div class="content-poster">
+      <img src="${imageUrl}" alt="${
+    item.title
+  }" onerror="this.src='/Images/placeholder.jpg'">
+    </div>
+    <div class="content-info">
+      <h3 class="content-title">${item.title}</h3>
+      <div class="content-metadata">
+        <span class="content-year">${item.releaseYear || "Unknown"}</span>
+        <span class="content-rating">★ ${item.rating || "N/A"}</span>
+      </div>
+      <div class="content-stats">
+        <button class="like-button ${
+          isLiked ? "liked" : ""
+        }" data-id="${itemId}">
+          <span class="heart">${heartIcon}</span>
+          <span class="like-count">${item.likes || 0}</span>
+        </button>
+      </div>
+    </div>
+  `;
+
+  // Make the card clickable
+  card.addEventListener("click", (e) => {
+    if (e.target.closest(".like-button")) return;
+    window.location.href = `/content/${itemId}`;
+  });
+
+  // Add like button functionality
+  const likeButton = card.querySelector(".like-button");
+  likeButton.addEventListener("click", async (e) => {
+    e.stopPropagation();
+
+    const isCurrentlyLiked = likedContent[itemId];
+    const newLikedState = !isCurrentlyLiked;
+
+    // Optimistic UI update
+    if (newLikedState) {
+      likedContent[itemId] = true;
+      likeButton.classList.add("liked");
+      likeButton.querySelector(".heart").textContent = "❤️";
+      likeButton.querySelector(".like-count").textContent =
+        (parseInt(likeButton.querySelector(".like-count").textContent) || 0) +
+        1;
+    } else {
+      delete likedContent[itemId];
+      likeButton.classList.remove("liked");
+      likeButton.querySelector(".heart").textContent = "🤍";
+      likeButton.querySelector(".like-count").textContent = Math.max(
+        0,
+        (parseInt(likeButton.querySelector(".like-count").textContent) || 0) - 1
+      );
+    }
+
+    localStorage.setItem("likedContent", JSON.stringify(likedContent));
+
+    // Update on server
+    try {
+      await updateLike(itemId, newLikedState);
+    } catch (error) {
+      console.error("Failed to update like status:", error);
+    }
+  });
+
+  return card;
+}
+
+// Display content in horizontal row
+function displayContentInRow(rowElement, contentArray) {
+  rowElement.innerHTML = "";
+  contentArray.forEach((item) => {
+    const card = createHorizontalCard(item);
+    rowElement.appendChild(card);
+  });
+}
+
+// Display home page with horizontal sections
+// Flag to prevent multiple simultaneous calls
+let isLoadingHomeSections = false;
+
+async function displayHomeSections() {
+  console.log("displayHomeSections called");
+
+  // Prevent multiple simultaneous calls
+  if (isLoadingHomeSections) {
+    console.log("Already loading home sections, skipping...");
+    return;
+  }
+
+  isLoadingHomeSections = true;
+
+  try {
+    // Clear genre sections container first to prevent duplicates
+    const genreSectionsContainer = document.getElementById("genreSections");
+    if (genreSectionsContainer) {
+      genreSectionsContainer.innerHTML = "";
+    }
+
+    // Load Popular Now section
+    const popularContent = await fetchPopularContent();
+    const popularRow = document.getElementById("popularRow");
+    if (popularRow && popularContent.length > 0) {
+      popularRow.innerHTML = ""; // Clear existing content
+      displayContentInRow(popularRow, popularContent);
+    }
+
+    // Load New Releases section
+    const newestContent = await fetchNewestContent();
+    const newReleasesRow = document.getElementById("newReleasesRow");
+    if (newReleasesRow && newestContent.length > 0) {
+      newReleasesRow.innerHTML = ""; // Clear existing content
+      displayContentInRow(newReleasesRow, newestContent);
+    }
+
+    // Load genres and create dynamic genre sections
+    if (!genreSectionsContainer) {
+      console.error("genreSections container not found!");
+      isLoadingHomeSections = false;
+      return;
+    }
+
+    try {
+      const genresResponse = await fetch(`${API_BASE_URL}/genres`);
+      console.log(
+        "Genres API Response:",
+        genresResponse.status,
+        genresResponse.statusText
+      );
+
+      if (!genresResponse.ok) {
+        console.error(
+          "Failed to fetch genres:",
+          genresResponse.status,
+          genresResponse.statusText
+        );
+        genreSectionsContainer.innerHTML = `
+          <div class="error-message" style="padding: 20px; color: #aaa; text-align: center;">
+            Failed to load genres. Please try again later.
+          </div>
+        `;
+        return;
+      }
+
+      const genresData = await genresResponse.json();
+      console.log("Genres Data:", genresData);
+      const genres = genresData.data || [];
+
+      if (genres.length === 0) {
+        console.warn("No genres found in API response");
+        genreSectionsContainer.innerHTML = `
+          <div class="error-message" style="padding: 20px; color: #aaa; text-align: center;">
+            No genres available.
+          </div>
+        `;
+        return;
+      }
+
+      genreSectionsContainer.innerHTML = "";
+      let sectionsCreated = 0;
+
+      // Create a section for each genre
+      for (const genre of genres) {
+        if (!genre.isActive) {
+          console.log(`Skipping inactive genre: ${genre.name}`);
+          continue;
+        }
+
+        console.log(
+          `Loading content for genre: ${genre.name} (ID: ${genre._id})`
+        );
+
+        try {
+          const newestByGenre = await fetchNewestByGenre(genre._id);
+          console.log(
+            `Content for ${genre.name}:`,
+            newestByGenre?.length || 0,
+            "items"
+          );
+
+          // Even if there's no content, show the genre section so users can click on it
+          // Convert genre ID to string to ensure proper URL encoding
+          const genreId = String(genre._id);
+
+          const section = document.createElement("section");
+          section.className = "content-section";
+
+          if (newestByGenre && newestByGenre.length > 0) {
+            section.innerHTML = `
+              <div class="section-header">
+                <h2 class="section-title genre-link" data-genre-id="${genreId}" style="cursor: pointer;" title="Click to view all ${genre.name} content">
+                  ${genre.name}
+                </h2>
+                <a href="/genre?id=${genreId}" class="view-all-link" title="View all ${genre.name} content">View All →</a>
+              </div>
+              <div class="horizontal-scroll">
+                <div class="content-row" data-genre-id="${genreId}"></div>
+              </div>
+            `;
+
+            const row = section.querySelector(".content-row");
+            displayContentInRow(row, newestByGenre);
+          } else {
+            // Show genre section even if no content (so users can click to see genre page)
+            section.innerHTML = `
+              <div class="section-header">
+                <h2 class="section-title genre-link" data-genre-id="${genreId}" style="cursor: pointer;" title="Click to view all ${genre.name} content">
+                  ${genre.name}
+                </h2>
+                <a href="/genre?id=${genreId}" class="view-all-link" title="View all ${genre.name} content">View All →</a>
+              </div>
+              <div class="horizontal-scroll">
+                <div class="content-row" data-genre-id="${genreId}">
+                  <p style="color: #aaa; padding: 20px;">No content available yet.</p>
+                </div>
+              </div>
+            `;
+          }
+
+          // Add click handler to genre title
+          const genreLink = section.querySelector(".genre-link");
+          if (genreLink) {
+            genreLink.addEventListener("click", (e) => {
+              e.preventDefault();
+              window.location.href = `/genre?id=${genreId}`;
+            });
+          }
+
+          genreSectionsContainer.appendChild(section);
+          sectionsCreated++;
+        } catch (genreError) {
+          console.error(
+            `Error loading content for genre ${genre.name}:`,
+            genreError
+          );
+        }
+      }
+
+      console.log(`Created ${sectionsCreated} genre sections`);
+
+      if (sectionsCreated === 0) {
+        genreSectionsContainer.innerHTML = `
+          <div class="error-message" style="padding: 20px; color: #aaa; text-align: center;">
+            No genre sections available. Please try again later.
+          </div>
+        `;
+      }
+    } catch (error) {
+      console.error("Error fetching genres:", error);
+      if (genreSectionsContainer) {
+        genreSectionsContainer.innerHTML = `
+          <div class="error-message" style="padding: 20px; color: #aaa; text-align: center;">
+            Error loading genres. Please check your connection and try again.
+          </div>
+        `;
+      }
+    }
+  } catch (error) {
+    console.error("Error displaying home sections:", error);
+  } finally {
+    isLoadingHomeSections = false;
   }
 }
 
@@ -321,25 +649,37 @@ const movies = [
 const contentData = [...tvShows, ...movies];
 
 document.addEventListener("DOMContentLoaded", function () {
+  console.log("Feed page loaded");
+
   // Check if user is logged in
   if (!localStorage.getItem("isLoggedIn")) {
-    window.location.href = "./login.html";
+    console.log("User not logged in, redirecting to login");
+    window.location.href = "/login";
     return;
   }
 
   // Get current profile
   const currentProfile = JSON.parse(localStorage.getItem("currentProfile"));
   if (!currentProfile) {
-    window.location.href = "./profiles.html";
+    console.log("No profile found, redirecting to profiles");
+    window.location.href = "/profiles";
     return;
   }
+
+  console.log("User logged in, profile:", currentProfile);
 
   // Update profile display
   const profileName = document.getElementById("profileName");
   const menuProfileImage = document.getElementById("menuProfileImage");
 
   profileName.textContent = currentProfile.name;
-  menuProfileImage.src = currentProfile.image;
+
+  // Fix profile image path if needed
+  let profileImageUrl = currentProfile.image || "/Images/placeholder.jpg";
+  if (profileImageUrl.startsWith("./Images/")) {
+    profileImageUrl = profileImageUrl.replace("./Images/", "/Images/");
+  }
+  menuProfileImage.src = profileImageUrl;
 
   // טעינת נתונים מה-API במקביל לנתונים הסטטיים
   // לא משנה את הפונקציונליות הקיימת בשלב זה
@@ -347,6 +687,7 @@ document.addEventListener("DOMContentLoaded", function () {
   const activeCategory = document
     .querySelector(".nav-link.active")
     .getAttribute("data-category");
+  console.log("Active category:", activeCategory);
   displayContent(activeCategory);
 
   // Search icon functionality
@@ -386,6 +727,13 @@ document.addEventListener("DOMContentLoaded", function () {
     const container = document.getElementById(category);
     if (container) {
       container.style.display = "block";
+
+      // Special handling for home page - display horizontal sections
+      if (category === "home") {
+        await displayHomeSections();
+        return;
+      }
+
       const grid = container.querySelector(".content-grid");
       grid.innerHTML = ""; // Clear existing content
 
@@ -428,11 +776,13 @@ document.addEventListener("DOMContentLoaded", function () {
           card.className = "content-card";
 
           // Get image URL and fix path if needed
-          let imageUrl = item.imageUrl || "./posters/placeholder.jpg";
+          let imageUrl = item.imageUrl || "/posters/placeholder.jpg";
 
           // Fix image path if it's coming from the API with the wrong path
           if (imageUrl.startsWith("/assets/posters/")) {
-            imageUrl = imageUrl.replace("/assets/posters/", "./posters/");
+            imageUrl = imageUrl.replace("/assets/posters/", "/posters/");
+          } else if (imageUrl.startsWith("./posters/")) {
+            imageUrl = imageUrl.replace("./posters/", "/posters/");
           }
 
           // Format genre display
@@ -456,7 +806,7 @@ document.addEventListener("DOMContentLoaded", function () {
             <div class="content-poster">
               <img src="${imageUrl}" alt="${
             item.title
-          }" onerror="this.src='./Images/placeholder.jpg'">
+          }" onerror="this.src='/Images/placeholder.jpg'">
             </div>
             <div class="content-info">
               <h3 class="content-title">${item.title}</h3>
@@ -482,7 +832,7 @@ document.addEventListener("DOMContentLoaded", function () {
             if (e.target.closest(".like-button")) return;
 
             // Navigate to content detail page
-            window.location.href = `./content-detail.html?id=${itemId}`;
+            window.location.href = `/content/${itemId}`;
           });
 
           // Add like button functionality
@@ -562,8 +912,8 @@ document.addEventListener("DOMContentLoaded", function () {
   const searchInput = document.getElementById("searchInput");
   const sortSelect = document.getElementById("sortSelect");
 
-  // Get liked content from localStorage
-  let likedContent = JSON.parse(localStorage.getItem("likedContent")) || {};
+  // Reload liked content from localStorage (already defined globally, but refresh it)
+  likedContent = JSON.parse(localStorage.getItem("likedContent")) || {};
 
   // Show home content initially
   displayContent("home");
@@ -614,12 +964,12 @@ document.querySelectorAll(".dropdown-item").forEach((item) => {
         console.log("Profile clicked");
         break;
       case "Switch User":
-        window.location.href = "./profiles.html";
+        window.location.href = "/profiles";
         break;
       case "Logout":
         localStorage.removeItem("isLoggedIn");
         localStorage.removeItem("currentProfile");
-        window.location.href = "./login.html";
+        window.location.href = "/login";
         break;
     }
   });

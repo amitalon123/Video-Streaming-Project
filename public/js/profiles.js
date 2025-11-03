@@ -1,17 +1,17 @@
 document.addEventListener('DOMContentLoaded', function() {
     // Check if user is logged in
     if (!localStorage.getItem('isLoggedIn')) {
-        window.location.href = './login.html';
+        window.location.href = '/login';
         return;
     }
 
     // Default profiles
     let profiles = [
-        { id: 1, name: 'Amit', image: './Images/Amit.jpg' },
-        { id: 2, name: 'Asaf', image: './Images/Asaf.jpg' },
-        { id: 3, name: 'Reut', image: './Images/Reut.jpg' },
-        { id: 4, name: 'Edith', image: './Images/Edith.jpg' },
-        { id: 5, name: 'Daniel', image: './Images/Daniel.jpg' }
+        { id: 1, name: 'Amit', image: '/Images/Amit.jpg' },
+        { id: 2, name: 'Asaf', image: '/Images/Asaf.jpg' },
+        { id: 3, name: 'Reut', image: '/Images/Reut.jpg' },
+        { id: 4, name: 'Edith', image: '/Images/Edith.jpg' },
+        { id: 5, name: 'Daniel', image: '/Images/Daniel.jpg' }
     ];
 
     // Load saved profiles if they exist
@@ -64,7 +64,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
             // Redirect after showing message
             setTimeout(() => {
-                window.location.href = './feed.html';
+                window.location.href = '/feed';
             }, 1500);
         });
 
@@ -97,6 +97,6 @@ document.addEventListener('DOMContentLoaded', function() {
     logoutBtn.addEventListener('click', function(e) {
         e.preventDefault();
         localStorage.clear();
-        window.location.href = './login.html';
+        window.location.href = '/login';
     });
 });

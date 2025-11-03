@@ -1,5 +1,5 @@
 //check if the user is authenticated
-export const isAuthenticated = (req, res, next) => {
+const isAuthenticated = (req, res, next) => {
   if (req.session && req.session.user) {
     return next();
   } else {
@@ -10,7 +10,7 @@ export const isAuthenticated = (req, res, next) => {
 };
 
 //check if the user is admin
-export const isAdmin = (req, res, next) => {
+const isAdmin = (req, res, next) => {
   if (req.session.user.role === "admin") {
     return next();
   } else {
@@ -18,4 +18,9 @@ export const isAdmin = (req, res, next) => {
       .status(403)
       .json({ error: "Forbidden: Access denied. Admin permissions required." });
   }
+};
+
+module.exports = {
+  isAuthenticated,
+  isAdmin
 };

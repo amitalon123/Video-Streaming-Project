@@ -1,1 +1,3 @@
-export const IMDB_TIMEOUT = 30000;
+module.exports = {
+  IMDB_TIMEOUT: 30000
+};
