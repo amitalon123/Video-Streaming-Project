@@ -854,6 +854,57 @@ body {
   margin-top: 15px;
 }
 
+/* Episode Progress Indicators */
+.episode-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.episode-header h3 {
+  margin: 0;
+  flex: 1;
+}
+
+.episode-progress-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: 15px;
+}
+
+.progress-percentage {
+  color: #e50914;
+  font-weight: bold;
+  font-size: 0.9em;
+}
+
+.completed-badge {
+  background-color: #2d5016;
+  color: #4ade80;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 0.8em;
+  font-weight: bold;
+}
+
+.episode-progress-bar-container {
+  width: 100%;
+  height: 6px;
+  background-color: #333;
+  border-radius: 3px;
+  margin: 10px 0;
+  overflow: hidden;
+}
+
+.episode-progress-bar {
+  height: 100%;
+  background-color: #e50914;
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
 /* Content Sections - Horizontal Scrolling */
 .content-section {
   margin-bottom: 40px;
