@@ -5,10 +5,12 @@ const Episode = require("./models/episode");
 require("dotenv").config();
 
 // נתחבר למונגו
+const seedConnectionString =
+  process.env.DB_URL ||
+  `mongodb+srv://gorenedith1_db_user:${process.env.mongoDBp}@clusterone.q2wvkfp.mongodb.net/video-streaming?retryWrites=true&w=majority`;
+
 mongoose
-  .connect(
-    `mongodb+srv://gorenedith1_db_user:${process.env.mongoDBp}@clusterone.q2wvkfp.mongodb.net/video-streaming?retryWrites=true&w=majority`
-  )
+  .connect(seedConnectionString)
   .then(() => console.log("MongoDB connected for seeding"))
   .catch((err) => {
     console.error("MongoDB connection error:", err);

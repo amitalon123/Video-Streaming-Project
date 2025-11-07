@@ -1,5 +1,6 @@
 // API Configuration
 const API_BASE_URL = "http://localhost:3000/api";
+const SERVER_API_BASE = "http://localhost:4000/api";
 
 // Get content ID from URL path
 // URL format: /content/:id (not /content?id=...)
@@ -83,18 +84,41 @@ function getEpisodeProgressKey(episodeId) {
 }
 
 // Load episode progress from localStorage
-function loadEpisodeProgress(episodeId) {
+async function loadEpisodeProgress(episodeId, contentId) {
   try {
     const key = getEpisodeProgressKey(episodeId);
     const progress = localStorage.getItem(key);
     if (progress) {
       const progressData = JSON.parse(progress);
-      return {
+      let local = {
         currentTime: progressData.currentTime || 0,
         duration: progressData.duration || 0,
         percentage: progressData.percentage || 0,
         isCompleted: progressData.isCompleted || false
       };
+      // Try to merge with server value
+      const currentProfile = JSON.parse(localStorage.getItem("currentProfile"));
+      const profileId = currentProfile && (currentProfile._id || currentProfile.id);
+      if (profileId && contentId) {
+        try {
+          const res = await fetch(`${SERVER_API_BASE}/progress/${episodeId}?profileId=${profileId}&contentId=${contentId}`);
+          if (res.ok) {
+            const json = await res.json();
+            if (json && json.data) {
+              const sr = json.data;
+              local = {
+                currentTime: sr.positionSeconds || local.currentTime,
+                duration: sr.durationSeconds || local.duration,
+                percentage: (sr.durationSeconds > 0 ? (sr.positionSeconds / sr.durationSeconds) * 100 : local.percentage) || local.percentage,
+                isCompleted: typeof sr.isCompleted === 'boolean' ? sr.isCompleted : local.isCompleted,
+              };
+            }
+          }
+        } catch (e) {
+          // ignore network errors
+        }
+      }
+      return local;
     }
   } catch (error) {
     console.error("Error loading episode progress:", error);
@@ -103,7 +127,7 @@ function loadEpisodeProgress(episodeId) {
 }
 
 // Save episode progress to localStorage
-function saveEpisodeProgress(episodeId, currentTime, duration) {
+function saveEpisodeProgress(episodeId, currentTime, duration, contentId) {
   try {
     const key = getEpisodeProgressKey(episodeId);
     const percentage = duration > 0 ? (currentTime / duration) * 100 : 0;
@@ -118,6 +142,26 @@ function saveEpisodeProgress(episodeId, currentTime, duration) {
     };
     
     localStorage.setItem(key, JSON.stringify(progressData));
+
+    // Fire-and-forget to server
+    try {
+      const currentProfile = JSON.parse(localStorage.getItem("currentProfile"));
+      const profileId = currentProfile && (currentProfile._id || currentProfile.id);
+      if (profileId && contentId) {
+        fetch(`${SERVER_API_BASE}/progress`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            profileId: profileId,
+            contentId: contentId,
+            episodeId: episodeId,
+            positionSeconds: Math.floor(currentTime),
+            durationSeconds: Math.floor(duration),
+            isCompleted: isCompleted,
+          }),
+        }).catch(() => {});
+      }
+    } catch (_) {}
   } catch (error) {
     console.error("Error saving episode progress:", error);
   }
@@ -282,7 +326,8 @@ function displaySeasonEpisodes(episodes, seriesTitle) {
     
     // Load progress for this episode
     const episodeId = episode._id || episode.id;
-    const progress = loadEpisodeProgress(episodeId);
+    // Load progress asynchronously; initial render first
+    const progress = { currentTime: 0, duration: 0, percentage: 0, isCompleted: false };
     const progressPercentage = Math.round(progress.percentage);
     const hasProgress = progress.percentage > 0;
     const isCompleted = progress.isCompleted;
@@ -325,6 +370,17 @@ function displaySeasonEpisodes(episodes, seriesTitle) {
     `;
   }).join("");
   
+  // After render, fetch server/local progress and update
+  episodes.forEach(async (episode) => {
+    const episodeId = episode._id || episode.id;
+    const video = document.querySelector(`.episode-video video[data-episode-id="${episodeId}"]`);
+    if (!video) return;
+    const progress = await loadEpisodeProgress(episodeId, (episode.content || episode.contentId));
+    video.setAttribute('data-saved-time', progress.currentTime || 0);
+    video.setAttribute('data-duration', progress.duration || (episode.duration * 60));
+    updateProgressDisplay(episodeId, progress.currentTime || 0, progress.duration || (episode.duration * 60));
+  });
+
   // Set up video progress tracking after episodes are rendered
   setupEpisodeProgressTracking();
 }
@@ -358,7 +414,8 @@ function setupEpisodeProgressTracking() {
           const currentTime = video.currentTime;
           const duration = video.duration;
           if (duration > 0) {
-            saveEpisodeProgress(episodeId, currentTime, duration);
+            const contentId = getContentIdFromUrl();
+            saveEpisodeProgress(episodeId, currentTime, duration, contentId);
             updateProgressDisplay(episodeId, currentTime, duration);
           }
         }
@@ -370,7 +427,8 @@ function setupEpisodeProgressTracking() {
       const currentTime = video.currentTime;
       const duration = video.duration;
       if (duration > 0) {
-        saveEpisodeProgress(episodeId, currentTime, duration);
+        const contentId = getContentIdFromUrl();
+        saveEpisodeProgress(episodeId, currentTime, duration, contentId);
         updateProgressDisplay(episodeId, currentTime, duration);
       }
       if (saveProgressInterval) {
@@ -381,7 +439,8 @@ function setupEpisodeProgressTracking() {
     // Save progress when video ends
     video.addEventListener('ended', () => {
       const duration = video.duration;
-      saveEpisodeProgress(episodeId, duration, duration);
+      const contentId = getContentIdFromUrl();
+      saveEpisodeProgress(episodeId, duration, duration, contentId);
       updateProgressDisplay(episodeId, duration, duration);
       if (saveProgressInterval) {
         clearInterval(saveProgressInterval);
@@ -393,7 +452,8 @@ function setupEpisodeProgressTracking() {
       const currentTime = video.currentTime;
       const duration = video.duration;
       if (duration > 0) {
-        saveEpisodeProgress(episodeId, currentTime, duration);
+        const contentId = getContentIdFromUrl();
+        saveEpisodeProgress(episodeId, currentTime, duration, contentId);
         updateProgressDisplay(episodeId, currentTime, duration);
       }
     });
