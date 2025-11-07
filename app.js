@@ -32,6 +32,9 @@ app.use("/api/genres", require("./routes/api/genreRoutes"));
 app.use("/api/episodes", require("./routes/api/episodeRoutes"));
 app.use("/api/admin", require("./routes/api/adminRoutes"));
 app.use("/api/stats", require("./routes/api/statisticsRoutes"));
+app.use("/api/users", require("./routes/api/userRoutes"));
+app.use("/api/viewings", require("./routes/api/viewingHabitRoutes"));
+app.use("/api/auth", require("./routes/api/authRoutes"));
 // app.use('/api/profiles', require('./routes/profileRoutes'));
 
 // Import view routes (EJS pages)
@@ -39,6 +42,7 @@ app.use("/", require("./routes/views/feed"));
 app.use("/feed", require("./routes/views/feed"));
 app.use("/profiles", require("./routes/views/profiles"));
 app.use("/login", require("./routes/views/login"));
+app.use("/register", require("./routes/views/register"));
 app.use("/genre", require("./routes/views/genre"));
 app.use("/content", require("./routes/views/content"));
 // 404 Handler

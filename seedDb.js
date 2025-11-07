@@ -2,6 +2,8 @@ const mongoose = require("mongoose");
 const Genre = require("./models/genre");
 const Content = require("./models/content");
 const Episode = require("./models/episode");
+const User = require("./models/user");
+const bcrypt = require("bcryptjs");
 require("dotenv").config();
 
 // connection to mongodb
@@ -129,11 +131,31 @@ const episodeTemplates = [
 async function seedDatabase() {
   try {
     // delete all existing data
+    await User.deleteMany({});
     await Genre.deleteMany({});
     await Content.deleteMany({});
     await Episode.deleteMany({});
 
     console.log("Previous data deleted");
+
+    // add users
+    const usersToSeed = [
+      { name: "Amit Alon", email: "amit@example.com", password: "password123", role: "admin", avatarUrl: "/Images/Amit.jpg" },
+      { name: "Asaf Sardas", email: "asaf@example.com", password: "password123", role: "user", avatarUrl: "/Images/Asaf.jpg" },
+      { name: "Reut Maduel", email: "reut@example.com", password: "password123", role: "user", avatarUrl: "/Images/Reut.jpg" },
+      { name: "Edith goren", email: "edith@example.com", password: "password123", role: "user", avatarUrl: "/Images/Edith.jpg" },
+    ];
+    const hashedUsers = await Promise.all(
+      usersToSeed.map(async (u) => ({
+        name: u.name,
+        email: u.email,
+        role: u.role,
+        avatarUrl: u.avatarUrl,
+        passwordHash: await bcrypt.hash(u.password, 10),
+      }))
+    );
+    const savedUsers = await User.insertMany(hashedUsers);
+    console.log(`${savedUsers.length} users added`);
 
     // add genres
     const savedGenres = await Genre.insertMany(genres);
