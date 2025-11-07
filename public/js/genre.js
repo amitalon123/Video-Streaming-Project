@@ -621,7 +621,7 @@ function setupDropdown() {
         case "Profile":
           console.log("Profile clicked");
           break;
-        case "Switch User":
+        case "Switch Profile":
           window.location.href = "/profiles";
           break;
         case "Logout":
