@@ -49,7 +49,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
-    loginForm.addEventListener('submit', function(e) {
+    loginForm.addEventListener('submit', async function(e) {
         e.preventDefault();
         let isValid = true;
 
@@ -67,13 +67,35 @@ document.addEventListener('DOMContentLoaded', function() {
             isValid = false;
         }
 
-        if (isValid) {
-            // Store login state
+        if (!isValid) return;
+
+        // Call backend to login with existing users only
+        try {
+            const res = await fetch('/api/auth/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email: emailInput.value, password: passwordInput.value })
+            });
+
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({ error: 'Login failed' }));
+                showError(passwordError, err.error || 'Invalid credentials');
+                passwordInput.classList.add('is-invalid');
+                return;
+            }
+
+            const data = await res.json();
+            const user = data.data;
+
+            // Persist authenticated state (no server session yet)
             localStorage.setItem('isLoggedIn', 'true');
-            localStorage.setItem('userEmail', emailInput.value);
-            
-            // Redirect to profiles page
+            localStorage.setItem('userEmail', user.email);
+            localStorage.setItem('currentUser', JSON.stringify(user));
+
+            // Redirect to profiles to pick a profile/avatar
             window.location.href = '/profiles';
+        } catch (error) {
+            showError(passwordError, 'Network error. Please try again.');
         }
     });
 });
