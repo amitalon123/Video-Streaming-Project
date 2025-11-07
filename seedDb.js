@@ -4,18 +4,20 @@ const Content = require("./models/content");
 const Episode = require("./models/episode");
 require("dotenv").config();
 
-// נתחבר למונגו
+// connection to mongodb
+const seedConnectionString =
+  process.env.DB_URL ||
+  `mongodb+srv://${process.env.MONGO_DB_USER}:${process.env.MONGO_DB_PASSWORD}@clusterone.q2wvkfp.mongodb.net/video-streaming?retryWrites=true&w=majority`;
+
 mongoose
-  .connect(
-    `mongodb+srv://gorenedith1_db_user:${process.env.mongoDBp}@clusterone.q2wvkfp.mongodb.net/video-streaming?retryWrites=true&w=majority`
-  )
+  .connect(seedConnectionString, { serverSelectionTimeoutMS: 30000 })
   .then(() => console.log("MongoDB connected for seeding"))
   .catch((err) => {
     console.error("MongoDB connection error:", err);
     process.exit(1);
   });
 
-// ז'אנרים לדוגמה
+// genres for example
 const genres = [
   { name: "Action", description: "Action movies and shows" },
   { name: "Comedy", description: "Funny movies and shows" },
@@ -25,25 +27,25 @@ const genres = [
   { name: "Documentary", description: "Real world stories" },
 ];
 
-// סרטים לדוגמה - משתמשים בקבצים הקיימים
+// movies for example - using the existing files
 const movies = [
   {
     title: "Nature Exploration",
     type: "movie",
     description: "A beautiful journey through nature's wonders",
     releaseYear: 2023,
-    imageUrl: "./posters/nature.jpg", // פוסטר תואם
-    videoUrl: "./videos/nature.mp4", // סרטון תואם
+    imageUrl: "./posters/nature.jpg", // matching poster
+    videoUrl: "./videos/nature.mp4", // matching video
     rating: 8.5,
-    duration: 15, // 15 דקות
+    duration: 15, // 15 minutes
   },
   {
     title: "Urban Life",
     type: "movie",
     description: "Modern city life and architecture",
     releaseYear: 2022,
-    imageUrl: "./posters/urban.jpg", // פוסטר תואם
-    videoUrl: "./videos/urban.mp4", // סרטון תואם
+    imageUrl: "./posters/urban.jpg", // matching poster
+    videoUrl: "./videos/urban.mp4", // matching video
     rating: 7.8,
     duration: 12,
   },
@@ -52,22 +54,22 @@ const movies = [
     type: "movie",
     description: "Explore the depths of the ocean",
     releaseYear: 2021,
-    imageUrl: "./posters/ocean.jpg", // פוסטר תואם
-    videoUrl: "./videos/ocean.mp4", // סרטון תואם
+    imageUrl: "./posters/ocean.jpg", // matching poster
+    videoUrl: "./videos/ocean.mp4", // matching video
     rating: 9.1,
     duration: 18,
   },
 ];
 
-// סדרות לדוגמה - משתמשים בפוסטרים הקיימים
+// series for example - using the existing posters
 const series = [
   {
     title: "Wildlife Documentary",
     type: "series",
     description: "Explore wildlife across different continents",
     releaseYear: 2022,
-    imageUrl: "./posters/wildlife.jpg", // פוסטר תואם
-    videoUrl: "./videos/wildlife.mp4", // סרטון תואם
+    imageUrl: "./posters/wildlife.jpg", // matching poster
+    videoUrl: "./videos/wildlife.mp4", // matching video
     rating: 9.2,
   },
   {
@@ -75,15 +77,15 @@ const series = [
     type: "series",
     description: "Latest technology innovations explained",
     releaseYear: 2023,
-    imageUrl: "./posters/tech.jpg", // פוסטר תואם
-    videoUrl: "./videos/tech.mp4", // סרטון תואם
+    imageUrl: "./posters/tech.jpg", // matching poster
+    videoUrl: "./videos/tech.mp4", // matching video
     rating: 8.7,
   },
 ];
 
-// פרקים לדוגמה לכל סדרה - משתמשים בקבצי הוידאו הקיימים
+// episodes for example - using the existing videos
 const episodeTemplates = [
-  // פרקים לסדרה 1 - Wildlife Documentary
+  // episodes for series 1 - Wildlife Documentary
   [
     {
       title: "African Savanna",
@@ -91,7 +93,7 @@ const episodeTemplates = [
       episodeNumber: 1,
       description: "Exploring the wildlife of African Savanna",
       duration: 22,
-      videoUrl: "./videos/wildlife.mp4", // סרטון תואם לסדרה
+      videoUrl: "./videos/wildlife.mp4", // matching video
     },
     {
       title: "Amazon Rainforest",
@@ -99,10 +101,10 @@ const episodeTemplates = [
       episodeNumber: 2,
       description: "Discovering the Amazon rainforest ecosystem",
       duration: 24,
-      videoUrl: "./videos/wildlife.mp4", // משתמשים באותו סרטון
+      videoUrl: "./videos/wildlife.mp4", // matching video
     },
   ],
-  // פרקים לסדרה 2 - Tech Innovations
+  // episodes for series 2 - Tech Innovations
   [
     {
       title: "AI Revolution",
@@ -110,7 +112,7 @@ const episodeTemplates = [
       episodeNumber: 1,
       description: "How AI is changing our world",
       duration: 20,
-      videoUrl: "./videos/tech.mp4", // סרטון תואם לסדרה
+      videoUrl: "./videos/tech.mp4", // matching video
     },
     {
       title: "Sustainable Tech",
@@ -118,34 +120,34 @@ const episodeTemplates = [
       episodeNumber: 2,
       description: "Technology innovations for sustainability",
       duration: 18,
-      videoUrl: "./videos/tech.mp4", // משתמשים באותו סרטון
+      videoUrl: "./videos/tech.mp4", // matching video
     },
   ],
 ];
 
-// פונקציה לאתחול בסיס הנתונים
+// function to initialize the database
 async function seedDatabase() {
   try {
-    // מחיקת כל הנתונים הקיימים
+    // delete all existing data
     await Genre.deleteMany({});
     await Content.deleteMany({});
     await Episode.deleteMany({});
 
     console.log("Previous data deleted");
 
-    // הוספת ז'אנרים
+    // add genres
     const savedGenres = await Genre.insertMany(genres);
     console.log(`${savedGenres.length} genres added`);
 
-    // מיפוי ז'אנרים לשימוש בתוכן
+    // mapping genres for use in content
     const genreMap = {};
     savedGenres.forEach((genre) => {
       genreMap[genre.name] = genre._id;
     });
 
-    // הוספת סרטים עם ז'אנרים מתאימים
+    // add movies with matching genres
     const moviesWithGenres = movies.map((movie) => {
-      // בחירת ז'אנרים אקראיים לכל סרט
+      // select random genres for each movie
       const randomGenres = [];
       randomGenres.push(genreMap["Action"]);
       randomGenres.push(genreMap["Drama"]);
@@ -159,9 +161,9 @@ async function seedDatabase() {
     const savedMovies = await Content.insertMany(moviesWithGenres);
     console.log(`${savedMovies.length} movies added`);
 
-    // הוספת סדרות עם ז'אנרים מתאימים
+    // add series with matching genres
     const seriesWithGenres = series.map((series, index) => {
-      // בחירת ז'אנרים אקראיים לכל סדרה
+      // select random genres for each series
       const randomGenres = [];
       if (index === 0) {
         randomGenres.push(genreMap["Documentary"]);
@@ -180,7 +182,7 @@ async function seedDatabase() {
     const savedSeries = await Content.insertMany(seriesWithGenres);
     console.log(`${savedSeries.length} series added`);
 
-    // הוספת פרקים לכל סדרה
+    // add episodes for each series
     let totalEpisodes = 0;
 
     for (let i = 0; i < savedSeries.length; i++) {
@@ -205,5 +207,5 @@ async function seedDatabase() {
   }
 }
 
-// הרצת הפונקציה
+// run the function
 seedDatabase();
