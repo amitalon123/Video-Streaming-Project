@@ -761,8 +761,8 @@ function setupDropdown() {
     item.addEventListener("click", (e) => {
       const action = e.target.closest(".dropdown-item").textContent.trim();
       switch (action) {
-        case "Profile":
-          console.log("Profile clicked");
+        case "User":
+          console.log("User clicked");
           break;
         case "Switch Profile":
           window.location.href = "/profiles";
