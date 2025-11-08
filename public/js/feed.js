@@ -180,6 +180,64 @@ async function updateLike(contentId, isLiked) {
   }
 }
 
+// Fetch all liked content with full details
+async function fetchLikedContent() {
+  try {
+    const currentUser = JSON.parse(localStorage.getItem("currentUser"));
+    if (!currentUser || !currentUser.id) {
+      return [];
+    }
+
+    // Get viewing habits with liked=true
+    const response = await fetch(
+      `${API_BASE_URL}/viewings?user=${currentUser.id}&liked=true&limit=1000`
+    );
+    if (!response.ok) throw new Error("Network response was not ok");
+    const data = await response.json();
+
+    if (!data.data || !Array.isArray(data.data)) {
+      return [];
+    }
+
+    // Extract content IDs
+    const contentIds = data.data
+      .map((item) => {
+        if (item.content && item.liked) {
+          return typeof item.content === "object"
+            ? item.content._id
+            : item.content;
+        }
+        return null;
+      })
+      .filter((id) => id !== null);
+
+    if (contentIds.length === 0) {
+      return [];
+    }
+
+    // Fetch full content details for each liked content
+    const contentPromises = contentIds.map(async (contentId) => {
+      try {
+        const contentResponse = await fetch(
+          `${API_BASE_URL}/content/${contentId}`
+        );
+        if (!contentResponse.ok) return null;
+        const contentData = await contentResponse.json();
+        return contentData.data;
+      } catch (error) {
+        console.error(`Error fetching content ${contentId}:`, error);
+        return null;
+      }
+    });
+
+    const contents = await Promise.all(contentPromises);
+    return contents.filter((content) => content !== null);
+  } catch (error) {
+    console.error("Error fetching liked content:", error);
+    return [];
+  }
+}
+
 // Create a content card for horizontal row
 function createHorizontalCard(item) {
   const card = document.createElement("div");
@@ -821,6 +879,9 @@ document.addEventListener("DOMContentLoaded", async function () {
         } else if (category === "popular" || category === "newandpopular") {
           // שם הקטגוריה שונה בין הממשק למשתמש לבין הקוד
           contentToShow = await fetchPopularContent();
+        } else if (category === "mylist") {
+          // Fetch liked content for My List
+          contentToShow = await fetchLikedContent();
         } else {
           contentToShow = await fetchAllContent(searchTerm, sortType);
         }
@@ -830,11 +891,19 @@ document.addEventListener("DOMContentLoaded", async function () {
 
         // If no content was found
         if (contentToShow.length === 0) {
-          grid.innerHTML = `
-            <div class="no-content">
-              <p>No content found. Try different search criteria.</p>
-            </div>
-          `;
+          if (category === "mylist") {
+            grid.innerHTML = `
+              <div class="no-content">
+                <p>Your list is empty. Start adding content you like!</p>
+              </div>
+            `;
+          } else {
+            grid.innerHTML = `
+              <div class="no-content">
+                <p>No content found. Try different search criteria.</p>
+              </div>
+            `;
+          }
           return;
         }
 
@@ -941,6 +1010,25 @@ document.addEventListener("DOMContentLoaded", async function () {
                   JSON.stringify(likedContent)
                 );
                 console.log(`Updated like status for ${item.title}`);
+
+                // If we're on My List page and user unliked, remove the card
+                const activeCategory = document
+                  .querySelector(".nav-link.active")
+                  ?.getAttribute("data-category");
+                if (activeCategory === "mylist" && !newLikedState) {
+                  // Remove the card from the grid
+                  card.remove();
+
+                  // If no more content, show empty message
+                  const grid = document.getElementById("myListGrid");
+                  if (grid && grid.children.length === 0) {
+                    grid.innerHTML = `
+                      <div class="no-content">
+                        <p>Your list is empty. Start adding content you like!</p>
+                      </div>
+                    `;
+                  }
+                }
               })
               .catch((error) => {
                 console.error("Failed to update like status:", error);
