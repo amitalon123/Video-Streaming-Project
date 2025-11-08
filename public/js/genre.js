@@ -85,26 +85,45 @@ async function fetchContentByGenre(
   }
 }
 
-// Load watched content from localStorage
+// Build a per-profile storage key for watched content
+function getWatchedStorageKey() {
+  const currentProfile = JSON.parse(localStorage.getItem("currentProfile"));
+  const profileId = currentProfile ? (currentProfile.id || currentProfile._id || currentProfile.name) : "default";
+  return `watchedContent_${profileId}`;
+}
+
+// Load watched content from localStorage (per profile, with legacy fallback)
 function loadWatchedContent() {
-  const watched = localStorage.getItem("watchedContent");
-  if (watched) {
-    try {
+  try {
+    const key = getWatchedStorageKey();
+    let watched = localStorage.getItem(key);
+
+    // Migrate legacy key if per-profile key not found
+    if (!watched) {
+      const legacy = localStorage.getItem("watchedContent");
+      if (legacy) {
+        watched = legacy;
+        // Save under the new per-profile key for future reads
+        localStorage.setItem(key, legacy);
+      }
+    }
+
+    if (watched) {
       const watchedArray = JSON.parse(watched);
-      watchedContentIds = new Set(watchedArray);
-    } catch (error) {
-      console.error("Error parsing watched content:", error);
+      watchedContentIds = Array.isArray(watchedArray) ? new Set(watchedArray) : new Set();
+    } else {
       watchedContentIds = new Set();
     }
+  } catch (error) {
+    console.error("Error loading watched content:", error);
+    watchedContentIds = new Set();
   }
 }
 
-// Save watched content to localStorage
+// Save watched content to localStorage (per profile)
 function saveWatchedContent() {
-  localStorage.setItem(
-    "watchedContent",
-    JSON.stringify(Array.from(watchedContentIds))
-  );
+  const key = getWatchedStorageKey();
+  localStorage.setItem(key, JSON.stringify(Array.from(watchedContentIds)));
 }
 
 // Mark content as watched
@@ -212,7 +231,6 @@ function createContentCard(item) {
     item._id
   }">
           <span class="heart">${heartIcon}</span>
-          <span class="like-count">${item.likes || 0}</span>
         </button>
       </div>
       <div class="content-actions">
@@ -249,6 +267,134 @@ function createContentCard(item) {
   return card;
 }
 
+// Load liked content from database
+async function loadLikedContentFromDB() {
+  try {
+    const currentUser = JSON.parse(localStorage.getItem("currentUser"));
+    const currentProfile = JSON.parse(localStorage.getItem("currentProfile"));
+    if (!currentUser || !currentUser.id) {
+      return {};
+    }
+
+    const profileQuery = currentProfile?.id ? `&profile=${currentProfile.id}` : "";
+    const response = await fetch(`${API_BASE_URL}/viewings?user=${currentUser.id}${profileQuery}&liked=true&limit=1000`);
+    if (!response.ok) throw new Error("Network response was not ok");
+    const data = await response.json();
+
+    // Convert array to object: { contentId: true, ... }
+    const likedContentObj = {};
+    if (data.data && Array.isArray(data.data)) {
+      data.data.forEach((item) => {
+        if (item.content && item.liked) {
+          const contentId =
+            typeof item.content === "object" ? item.content._id : item.content;
+          likedContentObj[contentId] = true;
+        }
+      });
+    }
+
+    return likedContentObj;
+  } catch (error) {
+    console.error("Error loading liked content from DB:", error);
+    return {};
+  }
+}
+
+// Load watched content from database (per profile)
+async function loadWatchedContentFromDB() {
+  try {
+    const currentUser = JSON.parse(localStorage.getItem("currentUser"));
+    const currentProfile = JSON.parse(localStorage.getItem("currentProfile"));
+    if (!currentUser || !currentUser.id) {
+      return new Set();
+    }
+
+    const profileQuery = currentProfile?.id ? `&profile=${currentProfile.id}` : "";
+    const response = await fetch(`${API_BASE_URL}/viewings?user=${currentUser.id}${profileQuery}&watched=true&limit=1000`);
+    if (!response.ok) throw new Error("Network response was not ok");
+    const data = await response.json();
+
+    const watchedSet = new Set();
+    if (data.data && Array.isArray(data.data)) {
+      data.data.forEach((item) => {
+        if (item.content && item.watched) {
+          const contentId =
+            typeof item.content === "object" ? item.content._id : item.content;
+          watchedSet.add(contentId);
+        }
+      });
+    }
+    return watchedSet;
+  } catch (error) {
+    console.error("Error loading watched content from DB:", error);
+    return new Set();
+  }
+}
+
+// Update like status using ViewingHabit API
+async function updateLike(contentId, isLiked) {
+  try {
+    const currentUser = JSON.parse(localStorage.getItem("currentUser"));
+    const currentProfile = JSON.parse(localStorage.getItem("currentProfile"));
+    if (!currentUser || !currentUser.id) {
+      console.error("User not found in localStorage");
+      return null;
+    }
+
+    const response = await fetch(`${API_BASE_URL}/viewings/like/toggle`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        user: currentUser.id,
+        profile: currentProfile?.id || null,
+        content: contentId,
+        episode: null,
+        liked: isLiked,
+      }),
+    });
+    if (!response.ok) throw new Error("Network response was not ok");
+    const result = await response.json();
+    return result;
+  } catch (error) {
+    console.error("Error updating like status:", error);
+    return null;
+  }
+}
+
+// Update watched status using ViewingHabit API
+async function updateWatched(contentId, isWatched) {
+  try {
+    const currentUser = JSON.parse(localStorage.getItem("currentUser"));
+    const currentProfile = JSON.parse(localStorage.getItem("currentProfile"));
+    if (!currentUser || !currentUser.id) {
+      console.error("User not found in localStorage");
+      return null;
+    }
+
+    const response = await fetch(`${API_BASE_URL}/viewings/watch/toggle`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        user: currentUser.id,
+        profile: currentProfile?.id || null,
+        content: contentId,
+        episode: null,
+        watched: isWatched,
+      }),
+    });
+    if (!response.ok) throw new Error("Network response was not ok");
+    const result = await response.json();
+    return result;
+  } catch (error) {
+    console.error("Error updating watched status:", error);
+    return null;
+  }
+}
+
 // Toggle like status
 async function toggleLike(contentId, buttonElement) {
   const likedContent = JSON.parse(localStorage.getItem("likedContent")) || {};
@@ -260,56 +406,43 @@ async function toggleLike(contentId, buttonElement) {
     likedContent[contentId] = true;
     buttonElement.classList.add("liked");
     buttonElement.querySelector(".heart").textContent = "❤️";
-    buttonElement.querySelector(".like-count").textContent =
-      (parseInt(buttonElement.querySelector(".like-count").textContent) || 0) +
-      1;
   } else {
     delete likedContent[contentId];
     buttonElement.classList.remove("liked");
     buttonElement.querySelector(".heart").textContent = "🤍";
-    buttonElement.querySelector(".like-count").textContent = Math.max(
-      0,
-      (parseInt(buttonElement.querySelector(".like-count").textContent) || 0) -
-        1
-    );
   }
-
-  localStorage.setItem("likedContent", JSON.stringify(likedContent));
 
   // Update on server
-  try {
-    const response = await fetch(`${API_BASE_URL}/content/${contentId}/like`, {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ add: newLikedState }),
+  updateLike(contentId, newLikedState)
+    .then(() => {
+      // Save to localStorage after successful update
+      localStorage.setItem("likedContent", JSON.stringify(likedContent));
+    })
+    .catch((error) => {
+      console.error("Failed to update like status:", error);
+      // Revert optimistic update on error
+      if (newLikedState) {
+        delete likedContent[contentId];
+        buttonElement.classList.remove("liked");
+        buttonElement.querySelector(".heart").textContent = "🤍";
+      } else {
+        likedContent[contentId] = true;
+        buttonElement.classList.add("liked");
+        buttonElement.querySelector(".heart").textContent = "❤️";
+      }
     });
-    if (!response.ok) throw new Error("Network response was not ok");
-  } catch (error) {
-    console.error("Failed to update like status:", error);
-  }
 }
 
 // Toggle watch status
 async function toggleWatchStatus(contentId, buttonElement) {
   const wasWatched = isWatched(contentId);
+  const newWatchedState = !wasWatched;
 
-  if (wasWatched) {
-    watchedContentIds.delete(contentId);
-    buttonElement.textContent = "Mark as Watched";
-    buttonElement.classList.remove("watched");
-
-    // Remove watched badge from poster
-    const card = buttonElement.closest(".content-card");
-    const badge = card.querySelector(".watched-badge");
-    if (badge) badge.remove();
-  } else {
-    markAsWatched(contentId);
+  // Optimistic UI update
+  if (newWatchedState) {
+    watchedContentIds.add(contentId);
     buttonElement.textContent = "✓ Watched";
     buttonElement.classList.add("watched");
-
-    // Add watched badge to poster
     const card = buttonElement.closest(".content-card");
     const poster = card.querySelector(".content-poster");
     if (poster && !poster.querySelector(".watched-badge")) {
@@ -318,10 +451,58 @@ async function toggleWatchStatus(contentId, buttonElement) {
       badge.textContent = "✓ Watched";
       poster.appendChild(badge);
     }
+  } else {
+    watchedContentIds.delete(contentId);
+    buttonElement.textContent = "Mark as Watched";
+    buttonElement.classList.remove("watched");
+    const card = buttonElement.closest(".content-card");
+    const badge = card.querySelector(".watched-badge");
+    if (badge) badge.remove();
   }
 
-  // Reapply filters if needed
-  applyFilters();
+  // Persist on server
+  updateWatched(contentId, newWatchedState)
+    .then(() => {
+      // Save per-profile cache only after successful update
+      saveWatchedContent();
+    })
+    .catch((error) => {
+      console.error("Failed to update watched status:", error);
+      // Revert optimistic update
+      if (newWatchedState) {
+        watchedContentIds.delete(contentId);
+        buttonElement.textContent = "Mark as Watched";
+        buttonElement.classList.remove("watched");
+        const card = buttonElement.closest(".content-card");
+        const badge = card.querySelector(".watched-badge");
+        if (badge) badge.remove();
+      } else {
+        watchedContentIds.add(contentId);
+        buttonElement.textContent = "✓ Watched";
+        buttonElement.classList.add("watched");
+        const card = buttonElement.closest(".content-card");
+        const poster = card.querySelector(".content-poster");
+        if (poster && !poster.querySelector(".watched-badge")) {
+          const badge = document.createElement("span");
+          badge.className = "watched-badge";
+          badge.textContent = "✓ Watched";
+          poster.appendChild(badge);
+        }
+      }
+    })
+    .finally(() => {
+      // Reapply filters if needed
+      applyFilters();
+    });
+}
+
+// Initialize watched set from DB on page load (and cache per-profile)
+async function initializeWatchedFromDB() {
+  const fromDb = await loadWatchedContentFromDB();
+  if (fromDb && fromDb.size >= 0) {
+    watchedContentIds = fromDb;
+    saveWatchedContent(); // cache per profile locally
+  }
 }
 
 // Display content in grid
@@ -618,10 +799,10 @@ function setupDropdown() {
     item.addEventListener("click", (e) => {
       const action = e.target.closest(".dropdown-item").textContent.trim();
       switch (action) {
-        case "Profile":
-          console.log("Profile clicked");
+        case "User":
+          console.log("User clicked");
           break;
-        case "Switch User":
+        case "Switch Profile":
           window.location.href = "/profiles";
           break;
         case "Logout":
@@ -663,6 +844,12 @@ async function initGenrePage() {
 
   // Load watched content
   loadWatchedContent();
+  // Then try to hydrate from DB and cache per-profile
+  initializeWatchedFromDB();
+
+  // Load liked content from database
+  const likedContentFromDB = await loadLikedContentFromDB();
+  localStorage.setItem("likedContent", JSON.stringify(likedContentFromDB));
 
   // Get genre ID from URL
   currentGenreId = getGenreIdFromUrl();

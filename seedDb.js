@@ -140,17 +140,17 @@ async function seedDatabase() {
 
     // add users
     const usersToSeed = [
-      { name: "Amit Alon", email: "amit@example.com", password: "password123", role: "admin", avatarUrl: "/Images/Amit.jpg" },
-      { name: "Asaf Sardas", email: "asaf@example.com", password: "password123", role: "user", avatarUrl: "/Images/Asaf.jpg" },
-      { name: "Reut Maduel", email: "reut@example.com", password: "password123", role: "user", avatarUrl: "/Images/Reut.jpg" },
-      { name: "Edith goren", email: "edith@example.com", password: "password123", role: "user", avatarUrl: "/Images/Edith.jpg" },
+      { name: "Amit Alon", email: "amit@gmail.com", password: "123456", role: "admin" },
+      { name: "Asaf Sardas", email: "asaf@gmail.com", password: "123456", role: "admin" },
+      { name: "Reut Maduel", email: "reut@gmail.com", password: "123456", role: "admin" },
+      { name: "Edith goren", email: "edith@gmail.com", password: "123456", role: "admin" },
+      { name: "Daniel goren", email: "daniel@gmail.com", password: "123456", role: "user" },
     ];
     const hashedUsers = await Promise.all(
       usersToSeed.map(async (u) => ({
         name: u.name,
         email: u.email,
         role: u.role,
-        avatarUrl: u.avatarUrl,
         passwordHash: await bcrypt.hash(u.password, 10),
       }))
     );

@@ -739,6 +739,80 @@ body {
 
 .video-container {
   margin-bottom: 20px;
+  position: relative;
+}
+
+.video-container video {
+  width: 100%;
+}
+
+.replay-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: rgba(0, 0, 0, 0.7);
+  z-index: 10;
+  pointer-events: none;
+}
+
+.replay-button {
+  pointer-events: auto !important;
+  background-color: rgba(255, 255, 255, 0.9);
+  border: none;
+  border-radius: 50%;
+  width: 80px;
+  height: 80px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+  z-index: 100;
+  position: relative;
+}
+
+.replay-button:hover {
+  background-color: rgba(255, 255, 255, 1);
+  transform: scale(1.1);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.7);
+}
+
+.replay-button i {
+  font-size: 2rem;
+  color: #000;
+  margin-bottom: 5px;
+}
+
+.replay-button span {
+  font-size: 0.7rem;
+  color: #000;
+  font-weight: bold;
+  text-transform: uppercase;
+}
+
+.episode-video {
+  position: relative;
+}
+
+.episode-video .replay-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: rgba(0, 0, 0, 0.7);
+  z-index: 10;
+  pointer-events: none;
 }
 
 .content-info-detail {
@@ -772,6 +846,12 @@ body {
   gap: 20px;
   margin: 15px 0;
   color: #aaa;
+  align-items: center;
+}
+
+.likes-container {
+  display: flex;
+  align-items: center;
 }
 
 .cast {

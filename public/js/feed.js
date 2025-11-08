@@ -1,8 +1,8 @@
 // API Configuration
 const API_BASE_URL = "http://localhost:3000/api";
 
-// Global state - liked content from localStorage
-let likedContent = JSON.parse(localStorage.getItem("likedContent")) || {};
+// Global state - liked content from database
+let likedContent = {};
 
 // API Functions - לשימוש עתידי
 async function fetchAllContent(searchTerm = "", sortBy = "") {
@@ -117,20 +117,126 @@ async function fetchNewestByGenre(genreId) {
   }
 }
 
+// Load liked content from database
+async function loadLikedContentFromDB() {
+  try {
+    const currentUser = JSON.parse(localStorage.getItem("currentUser"));
+    const currentProfile = JSON.parse(localStorage.getItem("currentProfile"));
+    if (!currentUser || !currentUser.id) {
+      return {};
+    }
+
+    const profileQuery = currentProfile?.id ? `&profile=${currentProfile.id}` : "";
+    const response = await fetch(`${API_BASE_URL}/viewings?user=${currentUser.id}${profileQuery}&liked=true&limit=1000`);
+    if (!response.ok) throw new Error("Network response was not ok");
+    const data = await response.json();
+
+    // Convert array to object: { contentId: true, ... }
+    const likedContentObj = {};
+    if (data.data && Array.isArray(data.data)) {
+      data.data.forEach((item) => {
+        if (item.content && item.liked) {
+          const contentId =
+            typeof item.content === "object" ? item.content._id : item.content;
+          likedContentObj[contentId] = true;
+        }
+      });
+    }
+
+    return likedContentObj;
+  } catch (error) {
+    console.error("Error loading liked content from DB:", error);
+    return {};
+  }
+}
+
+// Update like status using ViewingHabit API
 async function updateLike(contentId, isLiked) {
   try {
-    const response = await fetch(`${API_BASE_URL}/content/${contentId}/like`, {
+    const currentUser = JSON.parse(localStorage.getItem("currentUser"));
+    const currentProfile = JSON.parse(localStorage.getItem("currentProfile"));
+    if (!currentUser || !currentUser.id) {
+      console.error("User not found in localStorage");
+      return null;
+    }
+
+    const response = await fetch(`${API_BASE_URL}/viewings/like/toggle`, {
       method: "PUT",
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ add: isLiked }),
+      body: JSON.stringify({
+        user: currentUser.id,
+        profile: currentProfile?.id || null,
+        content: contentId,
+        episode: null,
+        liked: isLiked,
+      }),
     });
     if (!response.ok) throw new Error("Network response was not ok");
-    return await response.json();
+    const result = await response.json();
+    return result;
   } catch (error) {
     console.error("Error updating like status:", error);
     return null;
+  }
+}
+
+// Fetch all liked content with full details
+async function fetchLikedContent() {
+  try {
+    const currentUser = JSON.parse(localStorage.getItem("currentUser"));
+    const currentProfile = JSON.parse(localStorage.getItem("currentProfile"));
+    if (!currentUser || !currentUser.id) {
+      return [];
+    }
+
+    // Get viewing habits with liked=true
+    const profileQuery = currentProfile?.id ? `&profile=${currentProfile.id}` : "";
+    const response = await fetch(`${API_BASE_URL}/viewings?user=${currentUser.id}${profileQuery}&liked=true&limit=1000`);
+    if (!response.ok) throw new Error("Network response was not ok");
+    const data = await response.json();
+
+    if (!data.data || !Array.isArray(data.data)) {
+      return [];
+    }
+
+    // Extract content IDs
+    const contentIds = data.data
+      .map((item) => {
+        if (item.content && item.liked) {
+          return typeof item.content === "object"
+            ? item.content._id
+            : item.content;
+        }
+        return null;
+      })
+      .filter((id) => id !== null);
+
+    if (contentIds.length === 0) {
+      return [];
+    }
+
+    // Fetch full content details for each liked content
+    const contentPromises = contentIds.map(async (contentId) => {
+      try {
+        const contentResponse = await fetch(
+          `${API_BASE_URL}/content/${contentId}`
+        );
+        if (!contentResponse.ok) return null;
+        const contentData = await contentResponse.json();
+        return contentData.data;
+      } catch (error) {
+        console.error(`Error fetching content ${contentId}:`, error);
+        return null;
+      }
+    });
+
+    const contents = await Promise.all(contentPromises);
+    return contents.filter((content) => content !== null);
+  } catch (error) {
+    console.error("Error fetching liked content:", error);
+    return [];
   }
 }
 
@@ -151,26 +257,44 @@ function createHorizontalCard(item) {
   const itemId = item._id;
   const isLiked = likedContent[itemId];
   const heartIcon = isLiked ? "❤️" : "🤍";
+  // Compute genre display (match genre page)
+  let genreDisplay = "Unknown";
+  if (item.genres && item.genres.length > 0) {
+    if (typeof item.genres[0] === "object") {
+      genreDisplay = item.genres.map((g) => g.name).join(", ");
+    } else {
+      genreDisplay = item.genres.join(", ");
+    }
+  }
+  // Initialize watched state
+  if (window.ViewingActions) window.ViewingActions.init();
+  const watchBtnHtml = window.ViewingActions
+    ? window.ViewingActions.getWatchButtonHtml(itemId)
+    : `<button class="watch-button" data-id="${itemId}">Mark as Watched</button>`;
 
   card.innerHTML = `
     <div class="content-poster">
       <img src="${imageUrl}" alt="${
     item.title
   }" onerror="this.src='/Images/placeholder.jpg'">
+      ${window.ViewingActions && window.ViewingActions.isWatched(itemId) ? '<span class="watched-badge">✓ Watched</span>' : ''}
     </div>
     <div class="content-info">
       <h3 class="content-title">${item.title}</h3>
       <div class="content-metadata">
         <span class="content-year">${item.releaseYear || "Unknown"}</span>
-        <span class="content-rating">★ ${item.rating || "N/A"}</span>
+        <span class="content-genre">${genreDisplay}</span>
       </div>
       <div class="content-stats">
+        <span class="content-rating">★ ${item.rating || "N/A"}</span>
         <button class="like-button ${
           isLiked ? "liked" : ""
         }" data-id="${itemId}">
           <span class="heart">${heartIcon}</span>
-          <span class="like-count">${item.likes || 0}</span>
         </button>
+      </div>
+      <div class="content-actions">
+        ${watchBtnHtml}
       </div>
     </div>
   `;
@@ -194,28 +318,40 @@ function createHorizontalCard(item) {
       likedContent[itemId] = true;
       likeButton.classList.add("liked");
       likeButton.querySelector(".heart").textContent = "❤️";
-      likeButton.querySelector(".like-count").textContent =
-        (parseInt(likeButton.querySelector(".like-count").textContent) || 0) +
-        1;
     } else {
       delete likedContent[itemId];
       likeButton.classList.remove("liked");
       likeButton.querySelector(".heart").textContent = "🤍";
-      likeButton.querySelector(".like-count").textContent = Math.max(
-        0,
-        (parseInt(likeButton.querySelector(".like-count").textContent) || 0) - 1
-      );
     }
-
-    localStorage.setItem("likedContent", JSON.stringify(likedContent));
 
     // Update on server
-    try {
-      await updateLike(itemId, newLikedState);
-    } catch (error) {
-      console.error("Failed to update like status:", error);
-    }
+    updateLike(itemId, newLikedState)
+      .then(() => {
+        // Save to localStorage after successful update
+        localStorage.setItem("likedContent", JSON.stringify(likedContent));
+        console.log(`Updated like status for ${item.title}`);
+      })
+      .catch((error) => {
+        console.error("Failed to update like status:", error);
+        // Revert optimistic update on error
+        if (newLikedState) {
+          delete likedContent[itemId];
+          likeButton.classList.remove("liked");
+          likeButton.querySelector(".heart").textContent = "🤍";
+        } else {
+          likedContent[itemId] = true;
+          likeButton.classList.add("liked");
+          likeButton.querySelector(".heart").textContent = "❤️";
+        }
+      });
   });
+
+  // Add watch button functionality
+  const watchButton = card.querySelector(".watch-button");
+  if (watchButton && window.ViewingActions) {
+    const posterEl = card.querySelector(".content-poster");
+    window.ViewingActions.attachWatchHandler(watchButton, posterEl, itemId);
+  }
 
   return card;
 }
@@ -648,7 +784,7 @@ const movies = [
 // Combined list for home view
 const contentData = [...tvShows, ...movies];
 
-document.addEventListener("DOMContentLoaded", function () {
+document.addEventListener("DOMContentLoaded", async function () {
   console.log("Feed page loaded");
 
   // Check if user is logged in
@@ -753,6 +889,9 @@ document.addEventListener("DOMContentLoaded", function () {
         } else if (category === "popular" || category === "newandpopular") {
           // שם הקטגוריה שונה בין הממשק למשתמש לבין הקוד
           contentToShow = await fetchPopularContent();
+        } else if (category === "mylist") {
+          // Fetch liked content for My List
+          contentToShow = await fetchLikedContent();
         } else {
           contentToShow = await fetchAllContent(searchTerm, sortType);
         }
@@ -762,11 +901,19 @@ document.addEventListener("DOMContentLoaded", function () {
 
         // If no content was found
         if (contentToShow.length === 0) {
-          grid.innerHTML = `
-            <div class="no-content">
-              <p>No content found. Try different search criteria.</p>
-            </div>
-          `;
+          if (category === "mylist") {
+            grid.innerHTML = `
+              <div class="no-content">
+                <p>Your list is empty. Start adding content you like!</p>
+              </div>
+            `;
+          } else {
+            grid.innerHTML = `
+              <div class="no-content">
+                <p>No content found. Try different search criteria.</p>
+              </div>
+            `;
+          }
           return;
         }
 
@@ -802,11 +949,18 @@ document.addEventListener("DOMContentLoaded", function () {
           const isLiked = likedContent[itemId];
           const heartIcon = isLiked ? "❤️" : "🤍";
 
+          // Initialize watched state
+          if (window.ViewingActions) window.ViewingActions.init();
+          const watchBtnHtml = window.ViewingActions
+            ? window.ViewingActions.getWatchButtonHtml(itemId)
+            : `<button class="watch-button" data-id="${itemId}">Mark as Watched</button>`;
+
           card.innerHTML = `
             <div class="content-poster">
               <img src="${imageUrl}" alt="${
             item.title
           }" onerror="this.src='/Images/placeholder.jpg'">
+              ${window.ViewingActions && window.ViewingActions.isWatched(itemId) ? '<span class="watched-badge">✓ Watched</span>' : ''}
             </div>
             <div class="content-info">
               <h3 class="content-title">${item.title}</h3>
@@ -820,8 +974,10 @@ document.addEventListener("DOMContentLoaded", function () {
                   isLiked ? "liked" : ""
                 }" data-id="${itemId}">
                   <span class="heart">${heartIcon}</span>
-                  <span class="like-count">${item.likes || 0}</span>
                 </button>
+              </div>
+              <div class="content-actions">
+                ${watchBtnHtml}
               </div>
             </div>
           `;
@@ -848,33 +1004,62 @@ document.addEventListener("DOMContentLoaded", function () {
               likedContent[itemId] = true;
               likeButton.classList.add("liked");
               likeButton.querySelector(".heart").textContent = "❤️";
-              likeButton.querySelector(".like-count").textContent =
-                (parseInt(
-                  likeButton.querySelector(".like-count").textContent
-                ) || 0) + 1;
             } else {
               delete likedContent[itemId];
               likeButton.classList.remove("liked");
               likeButton.querySelector(".heart").textContent = "🤍";
-              likeButton.querySelector(".like-count").textContent = Math.max(
-                0,
-                (parseInt(
-                  likeButton.querySelector(".like-count").textContent
-                ) || 0) - 1
-              );
             }
-
-            // Save to localStorage
-            localStorage.setItem("likedContent", JSON.stringify(likedContent));
 
             // Update on server
-            try {
-              await updateLike(itemId, newLikedState);
-              console.log(`Updated like status for ${item.title}`);
-            } catch (error) {
-              console.error("Failed to update like status:", error);
-            }
+            updateLike(itemId, newLikedState)
+              .then(() => {
+                // Save to localStorage after successful update
+                localStorage.setItem(
+                  "likedContent",
+                  JSON.stringify(likedContent)
+                );
+                console.log(`Updated like status for ${item.title}`);
+
+                // If we're on My List page and user unliked, remove the card
+                const activeCategory = document
+                  .querySelector(".nav-link.active")
+                  ?.getAttribute("data-category");
+                if (activeCategory === "mylist" && !newLikedState) {
+                  // Remove the card from the grid
+                  card.remove();
+
+                  // If no more content, show empty message
+                  const grid = document.getElementById("myListGrid");
+                  if (grid && grid.children.length === 0) {
+                    grid.innerHTML = `
+                      <div class="no-content">
+                        <p>Your list is empty. Start adding content you like!</p>
+                      </div>
+                    `;
+                  }
+                }
+              })
+              .catch((error) => {
+                console.error("Failed to update like status:", error);
+                // Revert optimistic update on error
+                if (newLikedState) {
+                  delete likedContent[itemId];
+                  likeButton.classList.remove("liked");
+                  likeButton.querySelector(".heart").textContent = "🤍";
+                } else {
+                  likedContent[itemId] = true;
+                  likeButton.classList.add("liked");
+                  likeButton.querySelector(".heart").textContent = "❤️";
+                }
+              });
           });
+
+          // Add watch button functionality
+          const watchButton = card.querySelector(".watch-button");
+          if (watchButton && window.ViewingActions) {
+            const posterEl = card.querySelector(".content-poster");
+            window.ViewingActions.attachWatchHandler(watchButton, posterEl, itemId);
+          }
 
           grid.appendChild(card);
         });
@@ -912,8 +1097,11 @@ document.addEventListener("DOMContentLoaded", function () {
   const searchInput = document.getElementById("searchInput");
   const sortSelect = document.getElementById("sortSelect");
 
-  // Reload liked content from localStorage (already defined globally, but refresh it)
-  likedContent = JSON.parse(localStorage.getItem("likedContent")) || {};
+  // Load liked content from database
+  likedContent = await loadLikedContentFromDB();
+
+  // Also sync with localStorage for offline support
+  localStorage.setItem("likedContent", JSON.stringify(likedContent));
 
   // Show home content initially
   displayContent("home");
@@ -960,10 +1148,10 @@ document.querySelectorAll(".dropdown-item").forEach((item) => {
   item.addEventListener("click", (e) => {
     const action = e.target.closest(".dropdown-item").textContent.trim();
     switch (action) {
-      case "Profile":
-        console.log("Profile clicked");
+      case "User":
+        console.log("User clicked");
         break;
-      case "Switch User":
+      case "Switch Profile":
         window.location.href = "/profiles";
         break;
       case "Logout":

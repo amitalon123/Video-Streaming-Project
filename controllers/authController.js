@@ -1,6 +1,13 @@
 const User = require("../models/user");
 const bcrypt = require("bcryptjs");
 
+const formatProfiles = (profiles = []) =>
+  profiles.map((profile) => ({
+    id: profile._id.toString(),
+    name: profile.name,
+    image: profile.image,
+  }));
+
 exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -18,6 +25,12 @@ exports.login = async (req, res) => {
       return res.status(401).json({ success: false, error: "Invalid credentials" });
     }
 
+    // Ensure profiles exist for legacy accounts
+    const profilesInitialized = user.ensureProfilesInitialized();
+    if (profilesInitialized) {
+      await user.save();
+    }
+
     // No sessions for now; return safe user info the FE can store
     res.json({
       success: true,
@@ -27,6 +40,7 @@ exports.login = async (req, res) => {
         email: user.email,
         role: user.role,
         avatarUrl: user.avatarUrl || "",
+        profiles: formatProfiles(user.profiles),
       },
     });
   } catch (err) {
@@ -54,6 +68,8 @@ exports.register = async (req, res) => {
       role: "user",
     });
 
+    await user.ensureProfilesInitialized();
+
     res.status(201).json({
       success: true,
       data: {
@@ -62,6 +78,7 @@ exports.register = async (req, res) => {
         email: user.email,
         role: user.role,
         avatarUrl: user.avatarUrl || "",
+        profiles: formatProfiles(user.profiles),
       },
     });
   } catch (err) {

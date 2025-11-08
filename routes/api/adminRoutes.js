@@ -3,7 +3,7 @@ const router = express.Router();
 const adminController = require("../../controllers/adminController");
 const { isAuthenticated, isAdmin } = require("../../middleware/authMiddleware");
 
-router.use(isAuthenticated, isAdmin);
+//router.use(isAuthenticated, isAdmin);
 
 router.route("/").post(adminController.createContent); // Create new content
 

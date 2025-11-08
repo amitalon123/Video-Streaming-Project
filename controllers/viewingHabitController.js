@@ -1,4 +1,5 @@
 const ViewingHabit = require("../models/viewingHabit");
+const Content = require("../models/content");
 
 // List viewing habits with filters (by user/content/episode)
 exports.getAllViewings = async (req, res) => {
@@ -9,9 +10,21 @@ exports.getAllViewings = async (req, res) => {
 
     const filter = {};
     if (req.query.user) filter.user = req.query.user;
+    if (req.query.profile) filter.profile = req.query.profile;
     if (req.query.content) filter.content = req.query.content;
-    if (req.query.episode) filter.episode = req.query.episode;
+    // Handle episode filter - if episode is "null" or empty string, filter for episode=null (movies)
+    if (req.query.episode !== undefined) {
+      if (req.query.episode === "null" || req.query.episode === "") {
+        filter.episode = null;
+      } else if (req.query.episode) {
+        filter.episode = req.query.episode;
+      }
+    }
+    
+    console.log("ViewingHabit filter:", JSON.stringify(filter, null, 2));
     if (req.query.completed != null) filter.completed = req.query.completed === "true";
+    if (req.query.liked != null) filter.liked = req.query.liked === "true";
+    if (req.query.watched != null) filter.watched = req.query.watched === "true";
 
     let sort = { lastWatchedAt: -1 };
     if (req.query.sort) {
@@ -19,14 +32,19 @@ exports.getAllViewings = async (req, res) => {
       sort = { [field]: order === "-1" ? -1 : 1 };
     }
 
+    // Build query - conditionally populate episode
+    let query = ViewingHabit.find(filter)
+      .populate("user", "name email")
+      .populate("content", "title type");
+    
+    // Only populate episode if we're not filtering for episode=null
+    // When episode is null, populate will fail or return null anyway
+    if (filter.episode !== null && filter.episode !== undefined) {
+      query = query.populate("episode", "title seasonNumber episodeNumber");
+    }
+
     const [items, total] = await Promise.all([
-      ViewingHabit.find(filter)
-        .populate("user", "name email")
-        .populate("content", "title type")
-        .populate("episode", "title seasonNumber episodeNumber")
-        .sort(sort)
-        .skip(skip)
-        .limit(limit),
+      query.sort(sort).skip(skip).limit(limit),
       ViewingHabit.countDocuments(filter),
     ]);
 
@@ -44,7 +62,8 @@ exports.getAllViewings = async (req, res) => {
       data: items,
     });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    console.error("Error in getAllViewings:", err);
+    res.status(500).json({ success: false, error: err.message, stack: err.stack });
   }
 };
 
@@ -67,6 +86,30 @@ exports.createViewing = async (req, res) => {
   try {
     const item = await ViewingHabit.create(req.body);
     res.status(201).json({ success: true, data: item });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+};
+
+// Toggle watched for a viewing habit entry (or create if missing)
+exports.toggleWatched = async (req, res) => {
+  try {
+    const { user, profile = null, content, episode = null, watched } = req.body;
+    if (typeof watched !== "boolean" || !user || !content) {
+      return res.status(400).json({ success: false, error: "user, content and watched(boolean) are required" });
+    }
+
+    const selector = { user, profile: profile || null, content, episode: episode || null };
+
+    const item = await ViewingHabit.findOneAndUpdate(selector, {
+      $set: {
+        watched,
+        watchedAt: watched ? new Date() : undefined,
+        lastWatchedAt: new Date(),
+      },
+    }, { new: true, upsert: true, setDefaultsOnInsert: true });
+
+    res.json({ success: true, data: item });
   } catch (err) {
     res.status(400).json({ success: false, error: err.message });
   }
@@ -102,6 +145,7 @@ exports.upsertProgress = async (req, res) => {
   try {
     const {
       user,
+      profile = null,
       content,
       episode = null,
       lastPositionSec = 0,
@@ -122,7 +166,7 @@ exports.upsertProgress = async (req, res) => {
     };
 
     const item = await ViewingHabit.findOneAndUpdate(
-      { user, content, episode: episode || null },
+      { user, profile: profile || null, content, episode: episode || null },
       { $set: update, $inc: { timesWatched: completed ? 1 : 0 } },
       { new: true, upsert: true, setDefaultsOnInsert: true }
     );
@@ -136,16 +180,40 @@ exports.upsertProgress = async (req, res) => {
 // Toggle like for a viewing habit entry (or create if missing)
 exports.toggleLike = async (req, res) => {
   try {
-    const { user, content, episode = null, liked } = req.body;
+    const { user, profile = null, content, episode = null, liked } = req.body;
     if (typeof liked !== "boolean" || !user || !content) {
       return res.status(400).json({ success: false, error: "user, content and liked(boolean) are required" });
     }
 
+    const selector = { user, profile: profile || null, content, episode: episode || null };
+
+    // Get the previous like status to determine if we need to update content.likes
+    const previousItem = await ViewingHabit.findOne(selector);
+    const previousLiked = previousItem ? previousItem.liked : false;
+
+    // Update or create viewing habit entry
     const item = await ViewingHabit.findOneAndUpdate(
-      { user, content, episode: episode || null },
-      { $set: { liked, lastWatchedAt: new Date() } },
+      selector,
+      { $set: { liked, lastWatchedAt: new Date(), profile: profile || null } },
       { new: true, upsert: true, setDefaultsOnInsert: true }
     );
+
+    // Update content.likes count only if the like status actually changed
+    // and only for content (not episodes)
+    if (episode === null && previousLiked !== liked) {
+      const contentDoc = await Content.findById(content);
+      if (contentDoc) {
+        if (liked && !previousLiked) {
+          // User liked the content
+          contentDoc.likes += 1;
+        } else if (!liked && previousLiked) {
+          // User unliked the content
+          contentDoc.likes = Math.max(0, contentDoc.likes - 1);
+        }
+        await contentDoc.save();
+      }
+    }
+
     res.json({ success: true, data: item });
   } catch (err) {
     res.status(400).json({ success: false, error: err.message });
@@ -155,14 +223,16 @@ exports.toggleLike = async (req, res) => {
 // Set rating for a viewing habit
 exports.setRating = async (req, res) => {
   try {
-    const { user, content, episode = null, rating } = req.body;
+    const { user, profile = null, content, episode = null, rating } = req.body;
     if (rating == null || !user || !content) {
       return res.status(400).json({ success: false, error: "user, content and rating are required" });
     }
 
+    const selector = { user, profile: profile || null, content, episode: episode || null };
+
     const item = await ViewingHabit.findOneAndUpdate(
-      { user, content, episode: episode || null },
-      { $set: { rating, lastWatchedAt: new Date() } },
+      selector,
+      { $set: { rating, lastWatchedAt: new Date(), profile: profile || null } },
       { new: true, upsert: true, setDefaultsOnInsert: true }
     );
     res.json({ success: true, data: item });

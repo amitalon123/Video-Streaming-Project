@@ -17,58 +17,7 @@
     <link href="/css/style.css" rel="stylesheet" />
   </head>
   <body>
-    <nav class="navbar navbar-expand-lg fixed-top">
-      <div class="container-fluid px-0">
-        <a class="navbar-brand" href="/feed">
-          <div class="netflix-text">NETFLIX</div>
-        </a>
-
-        <button
-          class="navbar-toggler"
-          type="button"
-          data-bs-toggle="collapse"
-          data-bs-target="#navbarNav"
-        >
-          <span class="navbar-toggler-icon"></span>
-        </button>
-
-        <div class="collapse navbar-collapse" id="navbarNav">
-          <ul class="navbar-nav me-auto">
-            <li class="nav-item">
-              <a class="nav-link" href="/feed">Back to Browse</a>
-            </li>
-          </ul>
-
-          <div class="profile-menu">
-            <div class="profile-avatar" id="menuProfileAvatar">
-              <img
-                id="menuProfileImage"
-                alt="Profile"
-                class="profile-image"
-              />
-            </div>
-
-            <div class="profile-welcome">
-              Welcome, <span id="profileName"></span>
-            </div>
-            <span class="dropdown-icon">
-              <i class="bi bi-chevron-down"></i>
-            </span>
-            <div class="dropdown-menu" id="profileDropdown">
-              <div class="dropdown-item">
-                <i class="bi bi-person-fill"></i> Profile
-              </div>
-              <div class="dropdown-item">
-                <i class="bi bi-people-fill"></i> Switch User
-              </div>
-              <div class="dropdown-item">
-                <i class="bi bi-box-arrow-right"></i> Logout
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </nav>
+    <%- include('../partials/header', { showCategories: false, showSearch: false }) %>
 
     <!-- Main content area -->
     <div class="container-fluid main-content genre-page">
@@ -129,6 +78,7 @@
 
     <!-- Bootstrap JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="/js/viewingActions.js"></script>
     <script src="/js/genre.js"></script>
   </body>
 </html>
