@@ -80,8 +80,12 @@ async function loadLikedContentFromDB() {
       return {};
     }
 
-    const profileQuery = currentProfile?.id ? `&profile=${currentProfile.id}` : "";
-    const response = await fetch(`${API_BASE_URL}/viewings?user=${currentUser.id}${profileQuery}&liked=true&limit=1000`);
+    const profileQuery = currentProfile?.id
+      ? `&profile=${currentProfile.id}`
+      : "";
+    const response = await fetch(
+      `${API_BASE_URL}/viewings?user=${currentUser.id}${profileQuery}&liked=true&limit=1000`
+    );
     if (!response.ok) throw new Error("Network response was not ok");
     const data = await response.json();
 
@@ -132,6 +136,100 @@ async function updateLike(contentId, isLiked) {
     return result;
   } catch (error) {
     console.error("Error updating like status:", error);
+    return null;
+  }
+}
+
+// Load video progress from database
+async function loadVideoProgressFromDB(contentId, episodeId = null) {
+  try {
+    const currentUser = JSON.parse(localStorage.getItem("currentUser"));
+    const currentProfile = JSON.parse(localStorage.getItem("currentProfile"));
+    if (!currentUser || !currentUser.id) {
+      return null;
+    }
+
+    const profileId = currentProfile?.id || null;
+    let url = `${API_BASE_URL}/viewings?user=${currentUser.id}&content=${contentId}`;
+    if (profileId) url += `&profile=${profileId}`;
+    // For episodes, we pass the episodeId
+    // For movies, we don't send episode parameter and filter in frontend
+    if (episodeId) {
+      url += `&episode=${episodeId}`;
+    }
+
+    const response = await fetch(url);
+    if (!response.ok) throw new Error("Network response was not ok");
+    const data = await response.json();
+
+    if (data.data && data.data.length > 0) {
+      // Filter for the correct episode (null for movies, episodeId for episodes)
+      const progress =
+        data.data.find((item) => {
+          if (episodeId) {
+            const itemEpisodeId =
+              typeof item.episode === "object"
+                ? item.episode?._id
+                : item.episode;
+            return itemEpisodeId === episodeId;
+          } else {
+            // For movies, episode should be null
+            return !item.episode || item.episode === null;
+          }
+        }) || data.data[0]; // Fallback to first item if not found
+
+      return {
+        lastPositionSec: progress.lastPositionSec || 0,
+        durationSec: progress.durationSec || 0,
+        completed: progress.completed || false,
+      };
+    }
+
+    return null;
+  } catch (error) {
+    console.error("Error loading video progress from DB:", error);
+    return null;
+  }
+}
+
+// Save video progress to database
+async function saveVideoProgressToDB(
+  contentId,
+  episodeId,
+  currentTime,
+  duration
+) {
+  try {
+    const currentUser = JSON.parse(localStorage.getItem("currentUser"));
+    const currentProfile = JSON.parse(localStorage.getItem("currentProfile"));
+    if (!currentUser || !currentUser.id) {
+      console.error("User not found in localStorage");
+      return null;
+    }
+
+    const profileId = currentProfile?.id || null;
+    const lastPositionSec = Math.floor(currentTime);
+    const durationSec = Math.floor(duration);
+
+    const response = await fetch(`${API_BASE_URL}/viewings/progress/upsert`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        user: currentUser.id,
+        profile: profileId,
+        content: contentId,
+        episode: episodeId || null,
+        lastPositionSec: lastPositionSec,
+        durationSec: durationSec,
+      }),
+    });
+    if (!response.ok) throw new Error("Network response was not ok");
+    const result = await response.json();
+    return result;
+  } catch (error) {
+    console.error("Error saving video progress to DB:", error);
     return null;
   }
 }
@@ -292,7 +390,11 @@ function displayContentDetails(content) {
             </button>
           </div>
           <div class="watch-container">
-            ${window.ViewingActions ? window.ViewingActions.getWatchButtonHtml(content._id) : `<button class="watch-button" data-id="${content._id}">Mark as Watched</button>`}
+            ${
+              window.ViewingActions
+                ? window.ViewingActions.getWatchButtonHtml(content._id)
+                : `<button class="watch-button" data-id="${content._id}">Mark as Watched</button>`
+            }
           </div>
         </div>
         ${
@@ -377,23 +479,174 @@ function displayContentDetails(content) {
     });
   }
 
+  // Set up video progress tracking for movies
+  if (content.type === "movie" && videoUrl) {
+    setupMovieProgressTracking(content._id);
+  }
+
   // Add watch button functionality
   const watchButton = container.querySelector(".watch-button");
   if (watchButton && window.ViewingActions) {
     window.ViewingActions.init();
-    const bannerPoster = container.querySelector(".content-banner") || container.querySelector(".video-container");
+    const bannerPoster =
+      container.querySelector(".content-banner") ||
+      container.querySelector(".video-container");
     // For detail page, badge overlay is only meaningful when banner exists
     const posterEl = bannerPoster;
-    window.ViewingActions.attachWatchHandler(watchButton, posterEl, content._id);
+    window.ViewingActions.attachWatchHandler(
+      watchButton,
+      posterEl,
+      content._id
+    );
   }
 }
 
+// Set up progress tracking for movie videos
+async function setupMovieProgressTracking(contentId) {
+  // Wait for video element to be available (with retry)
+  let video = document.querySelector(".video-container video");
+  let retries = 0;
+  while (!video && retries < 10) {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    video = document.querySelector(".video-container video");
+    retries++;
+  }
+
+  if (!video) {
+    console.error("Video element not found for progress tracking");
+    return;
+  }
+
+  // Load saved progress from database
+  const savedProgress = await loadVideoProgressFromDB(contentId, null);
+  console.log("Loaded progress for movie:", savedProgress);
+
+  if (savedProgress && savedProgress.lastPositionSec > 0) {
+    // Wait for video metadata to load
+    if (video.readyState >= 1) {
+      // Video already has metadata
+      if (
+        savedProgress.lastPositionSec > 5 &&
+        savedProgress.lastPositionSec <
+          (savedProgress.durationSec || video.duration) * 0.95
+      ) {
+        video.currentTime = savedProgress.lastPositionSec;
+        console.log(
+          `Resuming movie ${contentId} from ${savedProgress.lastPositionSec.toFixed(
+            2
+          )}s`
+        );
+      }
+    } else {
+      // Wait for metadata
+      video.addEventListener(
+        "loadedmetadata",
+        () => {
+          const duration = video.duration || savedProgress.durationSec;
+          if (
+            savedProgress.lastPositionSec > 5 &&
+            savedProgress.lastPositionSec < duration * 0.95
+          ) {
+            video.currentTime = savedProgress.lastPositionSec;
+            console.log(
+              `Resuming movie ${contentId} from ${savedProgress.lastPositionSec.toFixed(
+                2
+              )}s`
+            );
+          }
+        },
+        { once: true }
+      );
+    }
+  }
+
+  // Save progress periodically while playing
+  let saveProgressInterval;
+  video.addEventListener("play", () => {
+    // Save progress every 5 seconds
+    saveProgressInterval = setInterval(() => {
+      if (!video.paused && !video.ended) {
+        const currentTime = video.currentTime;
+        const duration = video.duration;
+        if (duration > 0) {
+          saveVideoProgressToDB(contentId, null, currentTime, duration);
+          console.log(
+            `Saving progress: ${currentTime.toFixed(2)}s / ${duration.toFixed(
+              2
+            )}s`
+          );
+        }
+      }
+    }, 5000); // Save every 5 seconds
+  });
+
+  // Save progress when paused
+  video.addEventListener("pause", () => {
+    const currentTime = video.currentTime;
+    const duration = video.duration;
+    if (duration > 0) {
+      saveVideoProgressToDB(contentId, null, currentTime, duration);
+      console.log(
+        `Saving progress on pause: ${currentTime.toFixed(
+          2
+        )}s / ${duration.toFixed(2)}s`
+      );
+    }
+    if (saveProgressInterval) {
+      clearInterval(saveProgressInterval);
+    }
+  });
+
+  // Save progress when video ends
+  video.addEventListener("ended", () => {
+    const duration = video.duration;
+    saveVideoProgressToDB(contentId, null, duration, duration);
+    console.log(`Movie completed: ${duration.toFixed(2)}s`);
+    if (saveProgressInterval) {
+      clearInterval(saveProgressInterval);
+    }
+  });
+
+  // Save progress when seeking (user manually changes position)
+  video.addEventListener("seeked", () => {
+    const currentTime = video.currentTime;
+    const duration = video.duration;
+    if (duration > 0) {
+      saveVideoProgressToDB(contentId, null, currentTime, duration);
+      console.log(
+        `Saving progress on seek: ${currentTime.toFixed(
+          2
+        )}s / ${duration.toFixed(2)}s`
+      );
+    }
+  });
+
+  // Save progress when leaving page (visibilitychange)
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden && video && !video.paused && !video.ended) {
+      const currentTime = video.currentTime;
+      const duration = video.duration;
+      if (duration > 0) {
+        saveVideoProgressToDB(contentId, null, currentTime, duration);
+        console.log(
+          `Saving progress on page hide: ${currentTime.toFixed(
+            2
+          )}s / ${duration.toFixed(2)}s`
+        );
+      }
+    }
+  });
+}
+
 // Display episodes for series
-function displayEpisodes(episodes, seriesTitle) {
+async function displayEpisodes(episodes, seriesTitle) {
   if (!episodes || episodes.length === 0) return;
 
   const container = document.getElementById("episodesContainer");
   container.style.display = "block";
+
+  // Get content ID for loading progress
+  const contentId = getContentIdFromUrl();
 
   // Group episodes by season
   const seasons = {};
@@ -412,12 +665,16 @@ function displayEpisodes(episodes, seriesTitle) {
     .map(
       (season, index) =>
         `<button class="season-tab ${index === 0 ? "active" : ""}" 
-     data-season="${season}">Season ${season}</button>`
+      data-season="${season}">Season ${season}</button>`
     )
     .join("");
 
   // Create episodes list for first season
-  displaySeasonEpisodes(seasons[sortedSeasons[0]], seriesTitle);
+  await displaySeasonEpisodes(
+    seasons[sortedSeasons[0]],
+    seriesTitle,
+    contentId
+  );
 
   // Add event listeners to season tabs
   document.querySelectorAll(".season-tab").forEach((tab) => {
@@ -430,17 +687,48 @@ function displayEpisodes(episodes, seriesTitle) {
 
       // Display episodes for selected season
       const season = tab.dataset.season;
-      displaySeasonEpisodes(seasons[season], seriesTitle);
+      const contentId = getContentIdFromUrl();
+      displaySeasonEpisodes(seasons[season], seriesTitle, contentId);
     });
   });
 }
 
 // Display episodes for a specific season
-function displaySeasonEpisodes(episodes, seriesTitle) {
+async function displaySeasonEpisodes(episodes, seriesTitle, contentId) {
   const container = document.querySelector(".episodes-list");
 
-  container.innerHTML = episodes
-    .map((episode) => {
+  // Load progress for all episodes from database
+  const episodesWithProgress = await Promise.all(
+    episodes.map(async (episode) => {
+      const episodeId = episode._id || episode.id;
+      const dbProgress = await loadVideoProgressFromDB(contentId, episodeId);
+
+      // Fallback to localStorage if DB doesn't have progress
+      const localProgress = loadEpisodeProgress(episodeId);
+
+      // Use DB progress if available, otherwise use localStorage
+      let progress;
+      if (dbProgress && dbProgress.lastPositionSec > 0) {
+        const percentage =
+          dbProgress.durationSec > 0
+            ? (dbProgress.lastPositionSec / dbProgress.durationSec) * 100
+            : 0;
+        progress = {
+          currentTime: dbProgress.lastPositionSec,
+          duration: dbProgress.durationSec,
+          percentage: percentage,
+          isCompleted: dbProgress.completed || false,
+        };
+      } else {
+        progress = localProgress;
+      }
+
+      return { episode, progress };
+    })
+  );
+
+  container.innerHTML = episodesWithProgress
+    .map(({ episode, progress }) => {
       // Fix video path
       let videoUrl = episode.videoUrl || "";
       if (videoUrl.startsWith("/assets/videos/")) {
@@ -449,9 +737,7 @@ function displaySeasonEpisodes(episodes, seriesTitle) {
         videoUrl = videoUrl.replace("./videos/", "/videos/");
       }
 
-      // Load progress for this episode
       const episodeId = episode._id || episode.id;
-      const progress = loadEpisodeProgress(episodeId);
       const progressPercentage = Math.round(progress.percentage);
       const hasProgress = progress.percentage > 0;
       const isCompleted = progress.isCompleted;
@@ -514,25 +800,30 @@ function displaySeasonEpisodes(episodes, seriesTitle) {
     .join("");
 
   // Set up video progress tracking after episodes are rendered
-  setupEpisodeProgressTracking();
+  setupEpisodeProgressTracking(contentId);
 }
 
 // Set up progress tracking for all episode videos
-function setupEpisodeProgressTracking() {
+async function setupEpisodeProgressTracking(contentId) {
   const videos = document.querySelectorAll(".episode-video video");
 
-  videos.forEach((video) => {
+  videos.forEach(async (video) => {
     const episodeId = video.getAttribute("data-episode-id");
     if (!episodeId) return;
 
+    // Load saved progress from database
+    const savedProgress = await loadVideoProgressFromDB(contentId, episodeId);
+    const savedTime = savedProgress
+      ? savedProgress.lastPositionSec
+      : parseFloat(video.getAttribute("data-saved-time")) || 0;
+    const duration =
+      video.duration || parseFloat(video.getAttribute("data-duration")) || 0;
+
     // Resume from saved position when video is loaded
     video.addEventListener("loadedmetadata", () => {
-      const savedTime = parseFloat(video.getAttribute("data-saved-time")) || 0;
-      const duration =
-        video.duration || parseFloat(video.getAttribute("data-duration")) || 0;
-
+      const finalDuration = video.duration || duration;
       // Only resume if saved time is more than 5 seconds and less than 95% of video
-      if (savedTime > 5 && savedTime < duration * 0.95) {
+      if (savedTime > 5 && savedTime < finalDuration * 0.95) {
         video.currentTime = savedTime;
         console.log(
           `Resuming episode ${episodeId} from ${savedTime.toFixed(2)}s`
@@ -549,6 +840,9 @@ function setupEpisodeProgressTracking() {
           const currentTime = video.currentTime;
           const duration = video.duration;
           if (duration > 0) {
+            // Save to DB
+            saveVideoProgressToDB(contentId, episodeId, currentTime, duration);
+            // Also save to localStorage as backup
             saveEpisodeProgress(episodeId, currentTime, duration);
             updateProgressDisplay(episodeId, currentTime, duration);
           }
@@ -561,6 +855,9 @@ function setupEpisodeProgressTracking() {
       const currentTime = video.currentTime;
       const duration = video.duration;
       if (duration > 0) {
+        // Save to DB
+        saveVideoProgressToDB(contentId, episodeId, currentTime, duration);
+        // Also save to localStorage as backup
         saveEpisodeProgress(episodeId, currentTime, duration);
         updateProgressDisplay(episodeId, currentTime, duration);
       }
@@ -572,6 +869,9 @@ function setupEpisodeProgressTracking() {
     // Save progress when video ends
     video.addEventListener("ended", () => {
       const duration = video.duration;
+      // Save to DB
+      saveVideoProgressToDB(contentId, episodeId, duration, duration);
+      // Also save to localStorage as backup
       saveEpisodeProgress(episodeId, duration, duration);
       updateProgressDisplay(episodeId, duration, duration);
       if (saveProgressInterval) {
@@ -584,6 +884,9 @@ function setupEpisodeProgressTracking() {
       const currentTime = video.currentTime;
       const duration = video.duration;
       if (duration > 0) {
+        // Save to DB
+        saveVideoProgressToDB(contentId, episodeId, currentTime, duration);
+        // Also save to localStorage as backup
         saveEpisodeProgress(episodeId, currentTime, duration);
         updateProgressDisplay(episodeId, currentTime, duration);
       }
@@ -737,7 +1040,7 @@ async function initContentDetail() {
   if (content.type === "series") {
     const episodes = await fetchEpisodes(contentId);
     if (episodes) {
-      displayEpisodes(episodes, content.title);
+      await displayEpisodes(episodes, content.title);
     }
   }
 

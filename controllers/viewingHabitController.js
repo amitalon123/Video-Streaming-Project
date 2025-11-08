@@ -12,7 +12,16 @@ exports.getAllViewings = async (req, res) => {
     if (req.query.user) filter.user = req.query.user;
     if (req.query.profile) filter.profile = req.query.profile;
     if (req.query.content) filter.content = req.query.content;
-    if (req.query.episode) filter.episode = req.query.episode;
+    // Handle episode filter - if episode is "null" or empty string, filter for episode=null (movies)
+    if (req.query.episode !== undefined) {
+      if (req.query.episode === "null" || req.query.episode === "") {
+        filter.episode = null;
+      } else if (req.query.episode) {
+        filter.episode = req.query.episode;
+      }
+    }
+    
+    console.log("ViewingHabit filter:", JSON.stringify(filter, null, 2));
     if (req.query.completed != null) filter.completed = req.query.completed === "true";
     if (req.query.liked != null) filter.liked = req.query.liked === "true";
     if (req.query.watched != null) filter.watched = req.query.watched === "true";
@@ -23,14 +32,19 @@ exports.getAllViewings = async (req, res) => {
       sort = { [field]: order === "-1" ? -1 : 1 };
     }
 
+    // Build query - conditionally populate episode
+    let query = ViewingHabit.find(filter)
+      .populate("user", "name email")
+      .populate("content", "title type");
+    
+    // Only populate episode if we're not filtering for episode=null
+    // When episode is null, populate will fail or return null anyway
+    if (filter.episode !== null && filter.episode !== undefined) {
+      query = query.populate("episode", "title seasonNumber episodeNumber");
+    }
+
     const [items, total] = await Promise.all([
-      ViewingHabit.find(filter)
-        .populate("user", "name email")
-        .populate("content", "title type")
-        .populate("episode", "title seasonNumber episodeNumber")
-        .sort(sort)
-        .skip(skip)
-        .limit(limit),
+      query.sort(sort).skip(skip).limit(limit),
       ViewingHabit.countDocuments(filter),
     ]);
 
@@ -48,7 +62,8 @@ exports.getAllViewings = async (req, res) => {
       data: items,
     });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    console.error("Error in getAllViewings:", err);
+    res.status(500).json({ success: false, error: err.message, stack: err.stack });
   }
 };
 
