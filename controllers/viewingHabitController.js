@@ -1,4 +1,5 @@
 const ViewingHabit = require("../models/viewingHabit");
+const Content = require("../models/content");
 
 // List viewing habits with filters (by user/content/episode)
 exports.getAllViewings = async (req, res) => {
@@ -12,6 +13,7 @@ exports.getAllViewings = async (req, res) => {
     if (req.query.content) filter.content = req.query.content;
     if (req.query.episode) filter.episode = req.query.episode;
     if (req.query.completed != null) filter.completed = req.query.completed === "true";
+    if (req.query.liked != null) filter.liked = req.query.liked === "true";
 
     let sort = { lastWatchedAt: -1 };
     if (req.query.sort) {
@@ -141,11 +143,33 @@ exports.toggleLike = async (req, res) => {
       return res.status(400).json({ success: false, error: "user, content and liked(boolean) are required" });
     }
 
+    // Get the previous like status to determine if we need to update content.likes
+    const previousItem = await ViewingHabit.findOne({ user, content, episode: episode || null });
+    const previousLiked = previousItem ? previousItem.liked : false;
+
+    // Update or create viewing habit entry
     const item = await ViewingHabit.findOneAndUpdate(
       { user, content, episode: episode || null },
       { $set: { liked, lastWatchedAt: new Date() } },
       { new: true, upsert: true, setDefaultsOnInsert: true }
     );
+
+    // Update content.likes count only if the like status actually changed
+    // and only for content (not episodes)
+    if (episode === null && previousLiked !== liked) {
+      const contentDoc = await Content.findById(content);
+      if (contentDoc) {
+        if (liked && !previousLiked) {
+          // User liked the content
+          contentDoc.likes += 1;
+        } else if (!liked && previousLiked) {
+          // User unliked the content
+          contentDoc.likes = Math.max(0, contentDoc.likes - 1);
+        }
+        await contentDoc.save();
+      }
+    }
+
     res.json({ success: true, data: item });
   } catch (err) {
     res.status(400).json({ success: false, error: err.message });

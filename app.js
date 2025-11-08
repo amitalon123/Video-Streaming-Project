@@ -35,7 +35,7 @@ app.use("/api/stats", require("./routes/api/statisticsRoutes"));
 app.use("/api/users", require("./routes/api/userRoutes"));
 app.use("/api/viewings", require("./routes/api/viewingHabitRoutes"));
 app.use("/api/auth", require("./routes/api/authRoutes"));
-// app.use('/api/profiles', require('./routes/profileRoutes'));
+app.use("/api/profiles", require("./routes/api/profileRoutes"));
 
 // Import view routes (EJS pages)
 app.use("/", require("./routes/views/feed"));
