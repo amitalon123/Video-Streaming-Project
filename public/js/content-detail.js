@@ -1,17 +1,20 @@
 // API Configuration
 const API_BASE_URL = "http://localhost:3000/api";
 
+// Global state - liked content from localStorage
+let likedContent = JSON.parse(localStorage.getItem("likedContent")) || {};
+
 // Get content ID from URL path
 // URL format: /content/:id (not /content?id=...)
 function getContentIdFromUrl() {
   const path = window.location.pathname; // e.g., "/content/69064791bbdeecd4227cf950"
   const pathParts = path.split("/"); // ["", "content", "69064791bbdeecd4227cf950"]
-  
+
   // Find the content ID (the last part after /content/)
   if (pathParts.length >= 3 && pathParts[1] === "content") {
     return pathParts[2];
   }
-  
+
   // Fallback: try query string for backwards compatibility
   const urlParams = new URLSearchParams(window.location.search);
   return urlParams.get("id");
@@ -33,20 +36,22 @@ async function fetchContentDetails(contentId) {
 // Fetch episodes for series
 async function fetchEpisodes(contentId) {
   try {
-    const response = await fetch(`${API_BASE_URL}/episodes/content/${contentId}`);
+    const response = await fetch(
+      `${API_BASE_URL}/episodes/content/${contentId}`
+    );
     if (!response.ok) throw new Error("Network response was not ok");
     const data = await response.json();
-    
+
     // API returns episodes grouped by seasons (seasonMap)
     // Convert to flat array of all episodes
-    if (data.data && typeof data.data === 'object') {
+    if (data.data && typeof data.data === "object") {
       const episodesArray = [];
-      Object.keys(data.data).forEach(season => {
+      Object.keys(data.data).forEach((season) => {
         episodesArray.push(...data.data[season]);
       });
       return episodesArray;
     }
-    
+
     // If it's already an array, return as is
     return Array.isArray(data.data) ? data.data : [];
   } catch (error) {
@@ -59,10 +64,29 @@ async function fetchEpisodes(contentId) {
 async function updateViews(contentId) {
   try {
     await fetch(`${API_BASE_URL}/content/${contentId}/views`, {
-      method: "PUT"
+      method: "PUT",
     });
   } catch (error) {
     console.error("Error updating views:", error);
+  }
+}
+
+// Update like status
+async function updateLike(contentId, isLiked) {
+  try {
+    const response = await fetch(`${API_BASE_URL}/content/${contentId}/like`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ action: isLiked ? "like" : "unlike" }),
+    });
+    if (!response.ok) throw new Error("Network response was not ok");
+    const result = await response.json();
+    return result;
+  } catch (error) {
+    console.error("Error updating like status:", error);
+    return null;
   }
 }
 
@@ -78,7 +102,9 @@ function formatRuntime(minutes) {
 // Get a unique key for episode progress in localStorage
 function getEpisodeProgressKey(episodeId) {
   const currentProfile = JSON.parse(localStorage.getItem("currentProfile"));
-  const profileId = currentProfile ? currentProfile.id || currentProfile.name : "default";
+  const profileId = currentProfile
+    ? currentProfile.id || currentProfile.name
+    : "default";
   return `episodeProgress_${profileId}_${episodeId}`;
 }
 
@@ -93,7 +119,7 @@ function loadEpisodeProgress(episodeId) {
         currentTime: progressData.currentTime || 0,
         duration: progressData.duration || 0,
         percentage: progressData.percentage || 0,
-        isCompleted: progressData.isCompleted || false
+        isCompleted: progressData.isCompleted || false,
       };
     }
   } catch (error) {
@@ -108,15 +134,15 @@ function saveEpisodeProgress(episodeId, currentTime, duration) {
     const key = getEpisodeProgressKey(episodeId);
     const percentage = duration > 0 ? (currentTime / duration) * 100 : 0;
     const isCompleted = percentage >= 95; // Consider 95%+ as completed
-    
+
     const progressData = {
       currentTime: currentTime,
       duration: duration,
       percentage: percentage,
       isCompleted: isCompleted,
-      lastUpdated: new Date().toISOString()
+      lastUpdated: new Date().toISOString(),
     };
-    
+
     localStorage.setItem(key, JSON.stringify(progressData));
   } catch (error) {
     console.error("Error saving episode progress:", error);
@@ -136,7 +162,7 @@ function clearEpisodeProgress(episodeId) {
 // Display content details
 function displayContentDetails(content) {
   const container = document.getElementById("contentDetailContainer");
-  
+
   // Fix image path if necessary
   let imageUrl = content.imageUrl || "/posters/placeholder.jpg";
   if (imageUrl.startsWith("/assets/posters/")) {
@@ -144,50 +170,50 @@ function displayContentDetails(content) {
   } else if (imageUrl.startsWith("./posters/")) {
     imageUrl = imageUrl.replace("./posters/", "/posters/");
   }
-  
+
   // Format genres
   let genreNames = "Unknown";
   if (content.genres && content.genres.length > 0) {
     if (typeof content.genres[0] === "object") {
-      genreNames = content.genres.map(g => g.name).join(", ");
+      genreNames = content.genres.map((g) => g.name).join(", ");
     } else {
       genreNames = content.genres.join(", ");
     }
   }
-  
+
   // Display video if available
   let videoUrl = content.trailerUrl || "";
-  
+
   // נבדוק אם יש שדה videoUrl בתוכן, ללא קשר לסוג התוכן
   if (content.videoUrl) {
     videoUrl = content.videoUrl;
     console.log("Found videoUrl:", videoUrl);
   }
-  
+
   // Fix video path if necessary
   if (videoUrl && videoUrl.startsWith("/assets/videos/")) {
     videoUrl = videoUrl.replace("/assets/videos/", "/videos/");
   } else if (videoUrl && videoUrl.startsWith("./videos/")) {
     videoUrl = videoUrl.replace("./videos/", "/videos/");
   }
-  
+
   // עבור סרטים, נוסיף הדפסת דיבוג לראות אם יש להם videoUrl
   if (content.type === "movie") {
     console.log("Movie content:", content);
     console.log("Video URL for movie:", videoUrl);
   }
-  
-  const videoSection = videoUrl ? 
-    `<div class="video-container">
+
+  const videoSection = videoUrl
+    ? `<div class="video-container">
       <video controls width="100%" poster="${imageUrl}">
         <source src="${videoUrl}" type="video/mp4">
         Your browser does not support the video tag.
       </video>
-    </div>` :
-    `<div class="content-banner">
+    </div>`
+    : `<div class="content-banner">
       <img src="${imageUrl}" alt="${content.title}" onerror="this.src='/Images/placeholder.jpg'">
     </div>`;
-  
+
   container.innerHTML = `
     <div class="content-detail">
       ${videoSection}
@@ -195,7 +221,9 @@ function displayContentDetails(content) {
         <h1>${content.title}</h1>
         <div class="content-meta">
           <span class="year">${content.releaseYear}</span>
-          <span class="rating">${content.rating ? `★ ${content.rating}` : ''}</span>
+          <span class="rating">${
+            content.rating ? `★ ${content.rating}` : ""
+          }</span>
           <span class="duration">${formatRuntime(content.duration)}</span>
           <span class="genre">${genreNames}</span>
         </div>
@@ -203,63 +231,142 @@ function displayContentDetails(content) {
           <p>${content.description}</p>
         </div>
         <div class="stats">
-          <div class="views"><i class="bi bi-eye"></i> ${content.views || 0} views</div>
-          <div class="likes"><i class="bi bi-heart"></i> ${content.likes || 0} likes</div>
+          <div class="views"><i class="bi bi-eye"></i> ${
+            content.views || 0
+          } views</div>
+          <div class="likes-container">
+            <button class="like-button ${
+              likedContent[content._id] ? "liked" : ""
+            }" data-id="${content._id}" title="${
+    likedContent[content._id] ? "Unlike" : "Like"
+  }">
+              <span class="heart">${
+                likedContent[content._id] ? "❤️" : "🤍"
+              }</span>
+            </button>
+          </div>
         </div>
-        ${content.cast && content.cast.length > 0 ? `
+        ${
+          content.cast && content.cast.length > 0
+            ? `
         <div class="cast">
           <h3>Cast</h3>
           <ul>
-            ${content.cast.map(actor => `
+            ${content.cast
+              .map(
+                (actor) => `
               <li>
-                ${actor.name} ${actor.role ? `as ${actor.role}` : ''}
-                ${actor.wikipediaLink ? `<a href="${actor.wikipediaLink}" target="_blank"><i class="bi bi-wikipedia"></i></a>` : ''}
+                ${actor.name} ${actor.role ? `as ${actor.role}` : ""}
+                ${
+                  actor.wikipediaLink
+                    ? `<a href="${actor.wikipediaLink}" target="_blank"><i class="bi bi-wikipedia"></i></a>`
+                    : ""
+                }
               </li>
-            `).join('')}
+            `
+              )
+              .join("")}
           </ul>
         </div>
-        ` : ''}
-        ${content.director ? `<div class="director"><strong>Director:</strong> ${content.director}</div>` : ''}
+        `
+            : ""
+        }
+        ${
+          content.director
+            ? `<div class="director"><strong>Director:</strong> ${content.director}</div>`
+            : ""
+        }
       </div>
     </div>
   `;
+
+  // Add like button functionality
+  const likeButton = container.querySelector(".like-button");
+  if (likeButton) {
+    likeButton.addEventListener("click", async (e) => {
+      e.stopPropagation();
+
+      const contentId = content._id;
+      const isCurrentlyLiked = likedContent[contentId];
+      const newLikedState = !isCurrentlyLiked;
+
+      // Optimistic UI update
+      if (newLikedState) {
+        likedContent[contentId] = true;
+        likeButton.classList.add("liked");
+        likeButton.querySelector(".heart").textContent = "❤️";
+        likeButton.title = "Unlike";
+      } else {
+        delete likedContent[contentId];
+        likeButton.classList.remove("liked");
+        likeButton.querySelector(".heart").textContent = "🤍";
+        likeButton.title = "Like";
+      }
+
+      // Save to localStorage
+      localStorage.setItem("likedContent", JSON.stringify(likedContent));
+
+      // Update on server (non-blocking)
+      updateLike(contentId, newLikedState).catch((error) => {
+        console.error("Failed to update like status:", error);
+        // Revert optimistic update on error
+        if (newLikedState) {
+          delete likedContent[contentId];
+          likeButton.classList.remove("liked");
+          likeButton.querySelector(".heart").textContent = "🤍";
+          likeButton.title = "Like";
+        } else {
+          likedContent[contentId] = true;
+          likeButton.classList.add("liked");
+          likeButton.querySelector(".heart").textContent = "❤️";
+          likeButton.title = "Unlike";
+        }
+        localStorage.setItem("likedContent", JSON.stringify(likedContent));
+      });
+    });
+  }
 }
 
 // Display episodes for series
 function displayEpisodes(episodes, seriesTitle) {
   if (!episodes || episodes.length === 0) return;
-  
+
   const container = document.getElementById("episodesContainer");
   container.style.display = "block";
-  
+
   // Group episodes by season
   const seasons = {};
-  episodes.forEach(episode => {
+  episodes.forEach((episode) => {
     const season = episode.seasonNumber;
     if (!seasons[season]) seasons[season] = [];
     seasons[season].push(episode);
   });
-  
+
   // Sort seasons and episodes
   const sortedSeasons = Object.keys(seasons).sort((a, b) => a - b);
-  
+
   // Create season tabs
   const seasonsTabs = document.querySelector(".seasons-tabs");
-  seasonsTabs.innerHTML = sortedSeasons.map((season, index) => 
-    `<button class="season-tab ${index === 0 ? 'active' : ''}" 
+  seasonsTabs.innerHTML = sortedSeasons
+    .map(
+      (season, index) =>
+        `<button class="season-tab ${index === 0 ? "active" : ""}" 
      data-season="${season}">Season ${season}</button>`
-  ).join("");
-  
+    )
+    .join("");
+
   // Create episodes list for first season
   displaySeasonEpisodes(seasons[sortedSeasons[0]], seriesTitle);
-  
+
   // Add event listeners to season tabs
-  document.querySelectorAll(".season-tab").forEach(tab => {
+  document.querySelectorAll(".season-tab").forEach((tab) => {
     tab.addEventListener("click", () => {
       // Update active tab
-      document.querySelectorAll(".season-tab").forEach(t => t.classList.remove("active"));
+      document
+        .querySelectorAll(".season-tab")
+        .forEach((t) => t.classList.remove("active"));
       tab.classList.add("active");
-      
+
       // Display episodes for selected season
       const season = tab.dataset.season;
       displaySeasonEpisodes(seasons[season], seriesTitle);
@@ -270,45 +377,62 @@ function displayEpisodes(episodes, seriesTitle) {
 // Display episodes for a specific season
 function displaySeasonEpisodes(episodes, seriesTitle) {
   const container = document.querySelector(".episodes-list");
-  
-  container.innerHTML = episodes.map(episode => {
-    // Fix video path
-    let videoUrl = episode.videoUrl || "";
-    if (videoUrl.startsWith("/assets/videos/")) {
-      videoUrl = videoUrl.replace("/assets/videos/", "/videos/");
-    } else if (videoUrl.startsWith("./videos/")) {
-      videoUrl = videoUrl.replace("./videos/", "/videos/");
-    }
-    
-    // Load progress for this episode
-    const episodeId = episode._id || episode.id;
-    const progress = loadEpisodeProgress(episodeId);
-    const progressPercentage = Math.round(progress.percentage);
-    const hasProgress = progress.percentage > 0;
-    const isCompleted = progress.isCompleted;
-    
-    return `
+
+  container.innerHTML = episodes
+    .map((episode) => {
+      // Fix video path
+      let videoUrl = episode.videoUrl || "";
+      if (videoUrl.startsWith("/assets/videos/")) {
+        videoUrl = videoUrl.replace("/assets/videos/", "/videos/");
+      } else if (videoUrl.startsWith("./videos/")) {
+        videoUrl = videoUrl.replace("./videos/", "/videos/");
+      }
+
+      // Load progress for this episode
+      const episodeId = episode._id || episode.id;
+      const progress = loadEpisodeProgress(episodeId);
+      const progressPercentage = Math.round(progress.percentage);
+      const hasProgress = progress.percentage > 0;
+      const isCompleted = progress.isCompleted;
+
+      return `
       <div class="episode-card" data-episode-id="${episodeId}">
         <div class="episode-header">
           <h3>${episode.title}</h3>
-          ${hasProgress ? `
+          ${
+            hasProgress
+              ? `
           <div class="episode-progress-info">
             <span class="progress-percentage">${progressPercentage}%</span>
-            ${isCompleted ? '<span class="completed-badge">✓ Completed</span>' : ''}
+            ${
+              isCompleted
+                ? '<span class="completed-badge">✓ Completed</span>'
+                : ""
+            }
           </div>
-          ` : ''}
+          `
+              : ""
+          }
         </div>
-        <div class="episode-number">S${episode.seasonNumber} E${episode.episodeNumber}</div>
+        <div class="episode-number">S${episode.seasonNumber} E${
+        episode.episodeNumber
+      }</div>
         <div class="episode-description">${episode.description}</div>
         <div class="episode-meta">
           <span class="duration">${formatRuntime(episode.duration)}</span>
         </div>
-        ${hasProgress ? `
+        ${
+          hasProgress
+            ? `
         <div class="episode-progress-bar-container">
           <div class="episode-progress-bar" style="width: ${progressPercentage}%"></div>
         </div>
-        ` : ''}
-        ${videoUrl ? `
+        `
+            : ""
+        }
+        ${
+          videoUrl
+            ? `
         <div class="episode-video">
           <video 
             controls 
@@ -320,38 +444,44 @@ function displaySeasonEpisodes(episodes, seriesTitle) {
             Your browser does not support the video tag.
           </video>
         </div>
-        ` : ''}
+        `
+            : ""
+        }
       </div>
     `;
-  }).join("");
-  
+    })
+    .join("");
+
   // Set up video progress tracking after episodes are rendered
   setupEpisodeProgressTracking();
 }
 
 // Set up progress tracking for all episode videos
 function setupEpisodeProgressTracking() {
-  const videos = document.querySelectorAll('.episode-video video');
-  
-  videos.forEach(video => {
-    const episodeId = video.getAttribute('data-episode-id');
+  const videos = document.querySelectorAll(".episode-video video");
+
+  videos.forEach((video) => {
+    const episodeId = video.getAttribute("data-episode-id");
     if (!episodeId) return;
-    
+
     // Resume from saved position when video is loaded
-    video.addEventListener('loadedmetadata', () => {
-      const savedTime = parseFloat(video.getAttribute('data-saved-time')) || 0;
-      const duration = video.duration || parseFloat(video.getAttribute('data-duration')) || 0;
-      
+    video.addEventListener("loadedmetadata", () => {
+      const savedTime = parseFloat(video.getAttribute("data-saved-time")) || 0;
+      const duration =
+        video.duration || parseFloat(video.getAttribute("data-duration")) || 0;
+
       // Only resume if saved time is more than 5 seconds and less than 95% of video
       if (savedTime > 5 && savedTime < duration * 0.95) {
         video.currentTime = savedTime;
-        console.log(`Resuming episode ${episodeId} from ${savedTime.toFixed(2)}s`);
+        console.log(
+          `Resuming episode ${episodeId} from ${savedTime.toFixed(2)}s`
+        );
       }
     });
-    
+
     // Save progress periodically while playing
     let saveProgressInterval;
-    video.addEventListener('play', () => {
+    video.addEventListener("play", () => {
       // Save progress every 5 seconds
       saveProgressInterval = setInterval(() => {
         if (!video.paused && !video.ended) {
@@ -364,9 +494,9 @@ function setupEpisodeProgressTracking() {
         }
       }, 5000); // Save every 5 seconds
     });
-    
+
     // Save progress when paused
-    video.addEventListener('pause', () => {
+    video.addEventListener("pause", () => {
       const currentTime = video.currentTime;
       const duration = video.duration;
       if (duration > 0) {
@@ -377,9 +507,9 @@ function setupEpisodeProgressTracking() {
         clearInterval(saveProgressInterval);
       }
     });
-    
+
     // Save progress when video ends
-    video.addEventListener('ended', () => {
+    video.addEventListener("ended", () => {
       const duration = video.duration;
       saveEpisodeProgress(episodeId, duration, duration);
       updateProgressDisplay(episodeId, duration, duration);
@@ -387,9 +517,9 @@ function setupEpisodeProgressTracking() {
         clearInterval(saveProgressInterval);
       }
     });
-    
+
     // Save progress when seeking (user manually changes position)
-    video.addEventListener('seeked', () => {
+    video.addEventListener("seeked", () => {
       const currentTime = video.currentTime;
       const duration = video.duration;
       if (duration > 0) {
@@ -397,9 +527,9 @@ function setupEpisodeProgressTracking() {
         updateProgressDisplay(episodeId, currentTime, duration);
       }
     });
-    
+
     // Update progress bar in real-time while playing
-    video.addEventListener('timeupdate', () => {
+    video.addEventListener("timeupdate", () => {
       if (!video.paused && !video.ended) {
         const currentTime = video.currentTime;
         const duration = video.duration;
@@ -416,64 +546,68 @@ function updateProgressDisplay(episodeId, currentTime, duration) {
   const percentage = duration > 0 ? (currentTime / duration) * 100 : 0;
   const roundedPercentage = Math.round(percentage);
   const isCompleted = percentage >= 95;
-  
-  const episodeCard = document.querySelector(`[data-episode-id="${episodeId}"]`);
+
+  const episodeCard = document.querySelector(
+    `[data-episode-id="${episodeId}"]`
+  );
   if (!episodeCard) return;
-  
+
   // Update progress bar
-  const progressBar = episodeCard.querySelector('.episode-progress-bar');
+  const progressBar = episodeCard.querySelector(".episode-progress-bar");
   if (progressBar) {
     progressBar.style.width = `${roundedPercentage}%`;
   }
-  
+
   // Update or create progress percentage
-  let progressInfo = episodeCard.querySelector('.episode-progress-info');
+  let progressInfo = episodeCard.querySelector(".episode-progress-info");
   if (!progressInfo) {
     // Create progress info if it doesn't exist
-    const header = episodeCard.querySelector('.episode-header');
+    const header = episodeCard.querySelector(".episode-header");
     if (header) {
-      progressInfo = document.createElement('div');
-      progressInfo.className = 'episode-progress-info';
+      progressInfo = document.createElement("div");
+      progressInfo.className = "episode-progress-info";
       header.appendChild(progressInfo);
     } else {
       return;
     }
   }
-  
+
   // Update progress percentage
-  let percentageSpan = progressInfo.querySelector('.progress-percentage');
+  let percentageSpan = progressInfo.querySelector(".progress-percentage");
   if (!percentageSpan) {
-    percentageSpan = document.createElement('span');
-    percentageSpan.className = 'progress-percentage';
+    percentageSpan = document.createElement("span");
+    percentageSpan.className = "progress-percentage";
     progressInfo.insertBefore(percentageSpan, progressInfo.firstChild);
   }
   percentageSpan.textContent = `${roundedPercentage}%`;
-  
+
   // Update or create completed badge
-  let completedBadge = progressInfo.querySelector('.completed-badge');
+  let completedBadge = progressInfo.querySelector(".completed-badge");
   if (isCompleted && !completedBadge) {
-    completedBadge = document.createElement('span');
-    completedBadge.className = 'completed-badge';
-    completedBadge.textContent = '✓ Completed';
+    completedBadge = document.createElement("span");
+    completedBadge.className = "completed-badge";
+    completedBadge.textContent = "✓ Completed";
     progressInfo.appendChild(completedBadge);
   } else if (!isCompleted && completedBadge) {
     completedBadge.remove();
   }
-  
+
   // Show progress bar if it doesn't exist
-  let progressBarContainer = episodeCard.querySelector('.episode-progress-bar-container');
+  let progressBarContainer = episodeCard.querySelector(
+    ".episode-progress-bar-container"
+  );
   if (!progressBarContainer && percentage > 0) {
-    progressBarContainer = document.createElement('div');
-    progressBarContainer.className = 'episode-progress-bar-container';
-    const meta = episodeCard.querySelector('.episode-meta');
+    progressBarContainer = document.createElement("div");
+    progressBarContainer.className = "episode-progress-bar-container";
+    const meta = episodeCard.querySelector(".episode-meta");
     if (meta && meta.nextSibling) {
       episodeCard.insertBefore(progressBarContainer, meta.nextSibling);
     } else if (meta) {
       meta.after(progressBarContainer);
     }
-    
-    const progressBar = document.createElement('div');
-    progressBar.className = 'episode-progress-bar';
+
+    const progressBar = document.createElement("div");
+    progressBar.className = "episode-progress-bar";
     progressBar.style.width = `${roundedPercentage}%`;
     progressBarContainer.appendChild(progressBar);
   }
@@ -498,13 +632,16 @@ async function initContentDetail() {
   const profileName = document.getElementById("profileName");
   const menuProfileImage = document.getElementById("menuProfileImage");
   profileName.textContent = currentProfile.name;
-  
+
   // Fix profile image path if needed
   let profileImageUrl = currentProfile.image || "/Images/placeholder.jpg";
   if (profileImageUrl.startsWith("./Images/")) {
     profileImageUrl = profileImageUrl.replace("./Images/", "/Images/");
   }
   menuProfileImage.src = profileImageUrl;
+
+  // Reload liked content from localStorage
+  likedContent = JSON.parse(localStorage.getItem("likedContent")) || {};
 
   // Get content ID from URL
   const contentId = getContentIdFromUrl();
@@ -527,8 +664,10 @@ async function initContentDetail() {
   // Display content details
   displayContentDetails(content);
 
-  // Update view count
-  updateViews(contentId);
+  // Update view count (non-blocking, don't wait for it)
+  updateViews(contentId).catch((err) =>
+    console.error("Error updating views:", err)
+  );
 
   // If it's a series, fetch and display episodes
   if (content.type === "series") {
@@ -537,7 +676,7 @@ async function initContentDetail() {
       displayEpisodes(episodes, content.title);
     }
   }
-  
+
   // Set up dropdown toggle
   setupDropdown();
 }
@@ -547,7 +686,7 @@ function setupDropdown() {
   const dropdownToggle = document.querySelector(".dropdown-icon");
   const profileDropdown = document.getElementById("profileDropdown");
   const profileMenu = document.querySelector(".profile-menu");
-  
+
   // Toggle dropdown when clicking the toggle
   profileMenu.addEventListener("click", (e) => {
     e.stopPropagation(); // prevent bubbling to document
@@ -557,12 +696,15 @@ function setupDropdown() {
 
   // Close dropdown when clicking outside
   document.addEventListener("click", (e) => {
-    if (!dropdownToggle.contains(e.target) && !profileDropdown.contains(e.target)) {
+    if (
+      !dropdownToggle.contains(e.target) &&
+      !profileDropdown.contains(e.target)
+    ) {
       dropdownToggle.classList.remove("active");
       profileDropdown.classList.remove("show");
     }
   });
-  
+
   // Add click handlers for dropdown items
   document.querySelectorAll(".dropdown-item").forEach((item) => {
     item.addEventListener("click", (e) => {
