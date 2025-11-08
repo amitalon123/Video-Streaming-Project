@@ -257,25 +257,44 @@ function createHorizontalCard(item) {
   const itemId = item._id;
   const isLiked = likedContent[itemId];
   const heartIcon = isLiked ? "❤️" : "🤍";
+  // Compute genre display (match genre page)
+  let genreDisplay = "Unknown";
+  if (item.genres && item.genres.length > 0) {
+    if (typeof item.genres[0] === "object") {
+      genreDisplay = item.genres.map((g) => g.name).join(", ");
+    } else {
+      genreDisplay = item.genres.join(", ");
+    }
+  }
+  // Initialize watched state
+  if (window.ViewingActions) window.ViewingActions.init();
+  const watchBtnHtml = window.ViewingActions
+    ? window.ViewingActions.getWatchButtonHtml(itemId)
+    : `<button class="watch-button" data-id="${itemId}">Mark as Watched</button>`;
 
   card.innerHTML = `
     <div class="content-poster">
       <img src="${imageUrl}" alt="${
     item.title
   }" onerror="this.src='/Images/placeholder.jpg'">
+      ${window.ViewingActions && window.ViewingActions.isWatched(itemId) ? '<span class="watched-badge">✓ Watched</span>' : ''}
     </div>
     <div class="content-info">
       <h3 class="content-title">${item.title}</h3>
       <div class="content-metadata">
         <span class="content-year">${item.releaseYear || "Unknown"}</span>
-        <span class="content-rating">★ ${item.rating || "N/A"}</span>
+        <span class="content-genre">${genreDisplay}</span>
       </div>
       <div class="content-stats">
+        <span class="content-rating">★ ${item.rating || "N/A"}</span>
         <button class="like-button ${
           isLiked ? "liked" : ""
         }" data-id="${itemId}">
           <span class="heart">${heartIcon}</span>
         </button>
+      </div>
+      <div class="content-actions">
+        ${watchBtnHtml}
       </div>
     </div>
   `;
@@ -326,6 +345,13 @@ function createHorizontalCard(item) {
         }
       });
   });
+
+  // Add watch button functionality
+  const watchButton = card.querySelector(".watch-button");
+  if (watchButton && window.ViewingActions) {
+    const posterEl = card.querySelector(".content-poster");
+    window.ViewingActions.attachWatchHandler(watchButton, posterEl, itemId);
+  }
 
   return card;
 }
@@ -923,11 +949,18 @@ document.addEventListener("DOMContentLoaded", async function () {
           const isLiked = likedContent[itemId];
           const heartIcon = isLiked ? "❤️" : "🤍";
 
+          // Initialize watched state
+          if (window.ViewingActions) window.ViewingActions.init();
+          const watchBtnHtml = window.ViewingActions
+            ? window.ViewingActions.getWatchButtonHtml(itemId)
+            : `<button class="watch-button" data-id="${itemId}">Mark as Watched</button>`;
+
           card.innerHTML = `
             <div class="content-poster">
               <img src="${imageUrl}" alt="${
             item.title
           }" onerror="this.src='/Images/placeholder.jpg'">
+              ${window.ViewingActions && window.ViewingActions.isWatched(itemId) ? '<span class="watched-badge">✓ Watched</span>' : ''}
             </div>
             <div class="content-info">
               <h3 class="content-title">${item.title}</h3>
@@ -942,6 +975,9 @@ document.addEventListener("DOMContentLoaded", async function () {
                 }" data-id="${itemId}">
                   <span class="heart">${heartIcon}</span>
                 </button>
+              </div>
+              <div class="content-actions">
+                ${watchBtnHtml}
               </div>
             </div>
           `;
@@ -1017,6 +1053,13 @@ document.addEventListener("DOMContentLoaded", async function () {
                 }
               });
           });
+
+          // Add watch button functionality
+          const watchButton = card.querySelector(".watch-button");
+          if (watchButton && window.ViewingActions) {
+            const posterEl = card.querySelector(".content-poster");
+            window.ViewingActions.attachWatchHandler(watchButton, posterEl, itemId);
+          }
 
           grid.appendChild(card);
         });
