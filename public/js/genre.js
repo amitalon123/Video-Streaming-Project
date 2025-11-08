@@ -249,6 +249,69 @@ function createContentCard(item) {
   return card;
 }
 
+// Load liked content from database
+async function loadLikedContentFromDB() {
+  try {
+    const currentUser = JSON.parse(localStorage.getItem("currentUser"));
+    if (!currentUser || !currentUser.id) {
+      return {};
+    }
+
+    const response = await fetch(
+      `${API_BASE_URL}/viewings?user=${currentUser.id}&liked=true&limit=1000`
+    );
+    if (!response.ok) throw new Error("Network response was not ok");
+    const data = await response.json();
+
+    // Convert array to object: { contentId: true, ... }
+    const likedContentObj = {};
+    if (data.data && Array.isArray(data.data)) {
+      data.data.forEach((item) => {
+        if (item.content && item.liked) {
+          const contentId =
+            typeof item.content === "object" ? item.content._id : item.content;
+          likedContentObj[contentId] = true;
+        }
+      });
+    }
+
+    return likedContentObj;
+  } catch (error) {
+    console.error("Error loading liked content from DB:", error);
+    return {};
+  }
+}
+
+// Update like status using ViewingHabit API
+async function updateLike(contentId, isLiked) {
+  try {
+    const currentUser = JSON.parse(localStorage.getItem("currentUser"));
+    if (!currentUser || !currentUser.id) {
+      console.error("User not found in localStorage");
+      return null;
+    }
+
+    const response = await fetch(`${API_BASE_URL}/viewings/like/toggle`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        user: currentUser.id,
+        content: contentId,
+        episode: null,
+        liked: isLiked,
+      }),
+    });
+    if (!response.ok) throw new Error("Network response was not ok");
+    const result = await response.json();
+    return result;
+  } catch (error) {
+    console.error("Error updating like status:", error);
+    return null;
+  }
+}
+
 // Toggle like status
 async function toggleLike(contentId, buttonElement) {
   const likedContent = JSON.parse(localStorage.getItem("likedContent")) || {};
@@ -274,21 +337,35 @@ async function toggleLike(contentId, buttonElement) {
     );
   }
 
-  localStorage.setItem("likedContent", JSON.stringify(likedContent));
-
   // Update on server
-  try {
-    const response = await fetch(`${API_BASE_URL}/content/${contentId}/like`, {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ add: newLikedState }),
+  updateLike(contentId, newLikedState)
+    .then(() => {
+      // Save to localStorage after successful update
+      localStorage.setItem("likedContent", JSON.stringify(likedContent));
+    })
+    .catch((error) => {
+      console.error("Failed to update like status:", error);
+      // Revert optimistic update on error
+      if (newLikedState) {
+        delete likedContent[contentId];
+        buttonElement.classList.remove("liked");
+        buttonElement.querySelector(".heart").textContent = "🤍";
+        const currentCount =
+          parseInt(buttonElement.querySelector(".like-count").textContent) || 0;
+        buttonElement.querySelector(".like-count").textContent = Math.max(
+          0,
+          currentCount - 1
+        );
+      } else {
+        likedContent[contentId] = true;
+        buttonElement.classList.add("liked");
+        buttonElement.querySelector(".heart").textContent = "❤️";
+        const currentCount =
+          parseInt(buttonElement.querySelector(".like-count").textContent) || 0;
+        buttonElement.querySelector(".like-count").textContent =
+          currentCount + 1;
+      }
     });
-    if (!response.ok) throw new Error("Network response was not ok");
-  } catch (error) {
-    console.error("Failed to update like status:", error);
-  }
 }
 
 // Toggle watch status
@@ -663,6 +740,10 @@ async function initGenrePage() {
 
   // Load watched content
   loadWatchedContent();
+
+  // Load liked content from database
+  const likedContentFromDB = await loadLikedContentFromDB();
+  localStorage.setItem("likedContent", JSON.stringify(likedContentFromDB));
 
   // Get genre ID from URL
   currentGenreId = getGenreIdFromUrl();

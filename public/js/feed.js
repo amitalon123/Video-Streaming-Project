@@ -1,8 +1,8 @@
 // API Configuration
 const API_BASE_URL = "http://localhost:3000/api";
 
-// Global state - liked content from localStorage
-let likedContent = JSON.parse(localStorage.getItem("likedContent")) || {};
+// Global state - liked content from database
+let likedContent = {};
 
 // API Functions - לשימוש עתידי
 async function fetchAllContent(searchTerm = "", sortBy = "") {
@@ -117,17 +117,63 @@ async function fetchNewestByGenre(genreId) {
   }
 }
 
+// Load liked content from database
+async function loadLikedContentFromDB() {
+  try {
+    const currentUser = JSON.parse(localStorage.getItem("currentUser"));
+    if (!currentUser || !currentUser.id) {
+      return {};
+    }
+
+    const response = await fetch(
+      `${API_BASE_URL}/viewings?user=${currentUser.id}&liked=true&limit=1000`
+    );
+    if (!response.ok) throw new Error("Network response was not ok");
+    const data = await response.json();
+
+    // Convert array to object: { contentId: true, ... }
+    const likedContentObj = {};
+    if (data.data && Array.isArray(data.data)) {
+      data.data.forEach((item) => {
+        if (item.content && item.liked) {
+          const contentId =
+            typeof item.content === "object" ? item.content._id : item.content;
+          likedContentObj[contentId] = true;
+        }
+      });
+    }
+
+    return likedContentObj;
+  } catch (error) {
+    console.error("Error loading liked content from DB:", error);
+    return {};
+  }
+}
+
+// Update like status using ViewingHabit API
 async function updateLike(contentId, isLiked) {
   try {
-    const response = await fetch(`${API_BASE_URL}/content/${contentId}/like`, {
+    const currentUser = JSON.parse(localStorage.getItem("currentUser"));
+    if (!currentUser || !currentUser.id) {
+      console.error("User not found in localStorage");
+      return null;
+    }
+
+    const response = await fetch(`${API_BASE_URL}/viewings/like/toggle`, {
       method: "PUT",
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ add: isLiked }),
+      body: JSON.stringify({
+        user: currentUser.id,
+        content: contentId,
+        episode: null,
+        liked: isLiked,
+      }),
     });
     if (!response.ok) throw new Error("Network response was not ok");
-    return await response.json();
+    const result = await response.json();
+    return result;
   } catch (error) {
     console.error("Error updating like status:", error);
     return null;
@@ -207,14 +253,36 @@ function createHorizontalCard(item) {
       );
     }
 
-    localStorage.setItem("likedContent", JSON.stringify(likedContent));
-
     // Update on server
-    try {
-      await updateLike(itemId, newLikedState);
-    } catch (error) {
-      console.error("Failed to update like status:", error);
-    }
+    updateLike(itemId, newLikedState)
+      .then(() => {
+        // Save to localStorage after successful update
+        localStorage.setItem("likedContent", JSON.stringify(likedContent));
+        console.log(`Updated like status for ${item.title}`);
+      })
+      .catch((error) => {
+        console.error("Failed to update like status:", error);
+        // Revert optimistic update on error
+        if (newLikedState) {
+          delete likedContent[itemId];
+          likeButton.classList.remove("liked");
+          likeButton.querySelector(".heart").textContent = "🤍";
+          const currentCount =
+            parseInt(likeButton.querySelector(".like-count").textContent) || 0;
+          likeButton.querySelector(".like-count").textContent = Math.max(
+            0,
+            currentCount - 1
+          );
+        } else {
+          likedContent[itemId] = true;
+          likeButton.classList.add("liked");
+          likeButton.querySelector(".heart").textContent = "❤️";
+          const currentCount =
+            parseInt(likeButton.querySelector(".like-count").textContent) || 0;
+          likeButton.querySelector(".like-count").textContent =
+            currentCount + 1;
+        }
+      });
   });
 
   return card;
@@ -648,7 +716,7 @@ const movies = [
 // Combined list for home view
 const contentData = [...tvShows, ...movies];
 
-document.addEventListener("DOMContentLoaded", function () {
+document.addEventListener("DOMContentLoaded", async function () {
   console.log("Feed page loaded");
 
   // Check if user is logged in
@@ -864,16 +932,40 @@ document.addEventListener("DOMContentLoaded", function () {
               );
             }
 
-            // Save to localStorage
-            localStorage.setItem("likedContent", JSON.stringify(likedContent));
-
             // Update on server
-            try {
-              await updateLike(itemId, newLikedState);
-              console.log(`Updated like status for ${item.title}`);
-            } catch (error) {
-              console.error("Failed to update like status:", error);
-            }
+            updateLike(itemId, newLikedState)
+              .then(() => {
+                // Save to localStorage after successful update
+                localStorage.setItem(
+                  "likedContent",
+                  JSON.stringify(likedContent)
+                );
+                console.log(`Updated like status for ${item.title}`);
+              })
+              .catch((error) => {
+                console.error("Failed to update like status:", error);
+                // Revert optimistic update on error
+                if (newLikedState) {
+                  delete likedContent[itemId];
+                  likeButton.classList.remove("liked");
+                  likeButton.querySelector(".heart").textContent = "🤍";
+                  likeButton.querySelector(".like-count").textContent =
+                    Math.max(
+                      0,
+                      (parseInt(
+                        likeButton.querySelector(".like-count").textContent
+                      ) || 0) - 1
+                    );
+                } else {
+                  likedContent[itemId] = true;
+                  likeButton.classList.add("liked");
+                  likeButton.querySelector(".heart").textContent = "❤️";
+                  likeButton.querySelector(".like-count").textContent =
+                    (parseInt(
+                      likeButton.querySelector(".like-count").textContent
+                    ) || 0) + 1;
+                }
+              });
           });
 
           grid.appendChild(card);
@@ -912,8 +1004,11 @@ document.addEventListener("DOMContentLoaded", function () {
   const searchInput = document.getElementById("searchInput");
   const sortSelect = document.getElementById("sortSelect");
 
-  // Reload liked content from localStorage (already defined globally, but refresh it)
-  likedContent = JSON.parse(localStorage.getItem("likedContent")) || {};
+  // Load liked content from database
+  likedContent = await loadLikedContentFromDB();
+
+  // Also sync with localStorage for offline support
+  localStorage.setItem("likedContent", JSON.stringify(likedContent));
 
   // Show home content initially
   displayContent("home");
