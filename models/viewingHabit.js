@@ -39,6 +39,14 @@ const viewingHabitSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    // Explicit manual watch marker (separate from progress-based completed)
+    watched: {
+      type: Boolean,
+      default: false,
+    },
+    watchedAt: {
+      type: Date,
+    },
     rating: {
       type: Number,
       min: 0,

@@ -16,6 +16,7 @@ router
 // Utility endpoints
 router.put("/progress/upsert", viewingController.upsertProgress);
 router.put("/like/toggle", viewingController.toggleLike);
+router.put("/watch/toggle", viewingController.toggleWatched);
 router.put("/rating/set", viewingController.setRating);
 
 module.exports = router;

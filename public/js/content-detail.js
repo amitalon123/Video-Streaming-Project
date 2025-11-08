@@ -389,6 +389,13 @@ function displayContentDetails(content) {
               }</span>
             </button>
           </div>
+          <div class="watch-container">
+            ${
+              window.ViewingActions
+                ? window.ViewingActions.getWatchButtonHtml(content._id)
+                : `<button class="watch-button" data-id="${content._id}">Mark as Watched</button>`
+            }
+          </div>
         </div>
         ${
           content.cast && content.cast.length > 0
@@ -475,6 +482,22 @@ function displayContentDetails(content) {
   // Set up video progress tracking for movies
   if (content.type === "movie" && videoUrl) {
     setupMovieProgressTracking(content._id);
+  }
+
+  // Add watch button functionality
+  const watchButton = container.querySelector(".watch-button");
+  if (watchButton && window.ViewingActions) {
+    window.ViewingActions.init();
+    const bannerPoster =
+      container.querySelector(".content-banner") ||
+      container.querySelector(".video-container");
+    // For detail page, badge overlay is only meaningful when banner exists
+    const posterEl = bannerPoster;
+    window.ViewingActions.attachWatchHandler(
+      watchButton,
+      posterEl,
+      content._id
+    );
   }
 }
 
