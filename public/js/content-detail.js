@@ -560,6 +560,16 @@ async function setupMovieProgressTracking(contentId) {
     }
   }
 
+  // Hide replay button when video starts playing again
+  video.addEventListener("play", () => {
+    const replayOverlay = video
+      .closest(".video-container")
+      ?.querySelector(".replay-overlay");
+    if (replayOverlay) {
+      replayOverlay.style.display = "none";
+    }
+  });
+
   // Save progress periodically while playing
   let saveProgressInterval;
   video.addEventListener("play", () => {
@@ -605,6 +615,9 @@ async function setupMovieProgressTracking(contentId) {
     if (saveProgressInterval) {
       clearInterval(saveProgressInterval);
     }
+
+    // Show replay button
+    showReplayButton(video, contentId, null);
   });
 
   // Save progress when seeking (user manually changes position)
@@ -877,6 +890,9 @@ async function setupEpisodeProgressTracking(contentId) {
       if (saveProgressInterval) {
         clearInterval(saveProgressInterval);
       }
+
+      // Show replay button
+      showReplayButton(video, contentId, episodeId);
     });
 
     // Save progress when seeking (user manually changes position)
@@ -902,7 +918,128 @@ async function setupEpisodeProgressTracking(contentId) {
         }
       }
     });
+
+    // Hide replay button when video starts playing again
+    video.addEventListener("play", () => {
+      const replayOverlay = video
+        .closest(".episode-video")
+        ?.querySelector(".replay-overlay");
+      if (replayOverlay) {
+        replayOverlay.style.display = "none";
+      }
+    });
   });
+}
+
+// Show replay button when video ends
+function showReplayButton(video, contentId, episodeId) {
+  // Find the video container
+  const videoContainer =
+    video.closest(".video-container") || video.closest(".episode-video");
+  if (!videoContainer) {
+    console.error("Video container not found");
+    return;
+  }
+
+  // Check if replay overlay already exists
+  let replayOverlay = videoContainer.querySelector(".replay-overlay");
+
+  if (!replayOverlay) {
+    // Create replay overlay
+    replayOverlay = document.createElement("div");
+    replayOverlay.className = "replay-overlay";
+    replayOverlay.innerHTML = `
+      <button class="replay-button" title="Watch Again">
+        <i class="bi bi-arrow-repeat"></i>
+        <span>Watch Again</span>
+      </button>
+    `;
+    videoContainer.appendChild(replayOverlay);
+  }
+
+  // Always set up click handler (even if overlay already exists)
+  const replayButton = replayOverlay.querySelector(".replay-button");
+
+  if (replayButton) {
+    // Remove existing listeners to avoid duplicates by cloning the button
+    const newReplayButton = replayButton.cloneNode(true);
+    replayButton.parentNode.replaceChild(newReplayButton, replayButton);
+
+    // Add click handler - find video element dynamically when clicked
+    newReplayButton.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      console.log("Replay button clicked", { contentId, episodeId });
+
+      // Find the video element again (it might have changed)
+      const currentVideo = videoContainer.querySelector("video");
+      if (currentVideo) {
+        replayVideo(currentVideo, contentId, episodeId);
+      } else {
+        console.error("Video element not found in container");
+      }
+    });
+  }
+
+  // Show the overlay
+  replayOverlay.style.display = "flex";
+}
+
+// Replay video from beginning
+function replayVideo(video, contentId, episodeId) {
+  console.log("Replay button clicked", { video, contentId, episodeId });
+
+  if (!video) {
+    console.error("Video element not found");
+    return;
+  }
+
+  // Hide replay button first
+  const replayOverlay =
+    video.closest(".video-container")?.querySelector(".replay-overlay") ||
+    video.closest(".episode-video")?.querySelector(".replay-overlay");
+  if (replayOverlay) {
+    replayOverlay.style.display = "none";
+  }
+
+  // Reset video to beginning
+  video.currentTime = 0;
+
+  // Try to play the video (play() returns a Promise)
+  const playPromise = video.play();
+
+  if (playPromise !== undefined) {
+    playPromise
+      .then(() => {
+        console.log("Video replay started successfully");
+
+        // Clear progress from database
+        saveVideoProgressToDB(contentId, episodeId, 0, video.duration);
+
+        // Clear progress from localStorage for episodes
+        if (episodeId) {
+          clearEpisodeProgress(episodeId);
+        }
+
+        // Update progress display for episodes
+        if (episodeId) {
+          updateProgressDisplay(episodeId, 0, video.duration);
+        }
+      })
+      .catch((error) => {
+        console.error("Error playing video:", error);
+        // If autoplay is blocked, the video is reset but user needs to click play
+        // This is normal browser behavior for autoplay policies
+      });
+  } else {
+    // Fallback for older browsers
+    console.log("Video replay (fallback)");
+    saveVideoProgressToDB(contentId, episodeId, 0, video.duration);
+    if (episodeId) {
+      clearEpisodeProgress(episodeId);
+      updateProgressDisplay(episodeId, 0, video.duration);
+    }
+  }
 }
 
 // Update progress display (progress bar and percentage)
