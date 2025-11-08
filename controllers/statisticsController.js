@@ -35,9 +35,20 @@ exports.sumPopularityByGenre = async (req, res) => {
       },
 
       {
-        $sort: { totalLikes: -1 },
+        $sort: { totalViews: -1, totalLikes: -1 },
       },
     ]);
+
+    // Ensure data is sorted by totalViews (descending), then by totalLikes
+    result.sort((a, b) => {
+      const viewsA = a.totalViews || 0;
+      const viewsB = b.totalViews || 0;
+      if (viewsB !== viewsA) {
+        return viewsB - viewsA;
+      }
+      return (b.totalLikes || 0) - (a.totalLikes || 0);
+    });
+
     res.json({ success: true, data: result });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
