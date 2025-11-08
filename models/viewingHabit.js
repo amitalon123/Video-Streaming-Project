@@ -7,6 +7,10 @@ const viewingHabitSchema = new mongoose.Schema(
       ref: "User",
       required: true,
     },
+    profile: {
+      type: mongoose.Schema.Types.ObjectId,
+      default: null,
+    },
     content: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Content",
@@ -57,6 +61,7 @@ const viewingHabitSchema = new mongoose.Schema(
 
 // Indexes for common query patterns
 viewingHabitSchema.index({ user: 1, content: 1 });
+viewingHabitSchema.index({ user: 1, profile: 1, content: 1 });
 viewingHabitSchema.index({ user: 1, episode: 1 });
 viewingHabitSchema.index({ user: 1, lastWatchedAt: -1 });
 

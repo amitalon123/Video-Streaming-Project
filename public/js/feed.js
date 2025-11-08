@@ -121,13 +121,13 @@ async function fetchNewestByGenre(genreId) {
 async function loadLikedContentFromDB() {
   try {
     const currentUser = JSON.parse(localStorage.getItem("currentUser"));
+    const currentProfile = JSON.parse(localStorage.getItem("currentProfile"));
     if (!currentUser || !currentUser.id) {
       return {};
     }
 
-    const response = await fetch(
-      `${API_BASE_URL}/viewings?user=${currentUser.id}&liked=true&limit=1000`
-    );
+    const profileQuery = currentProfile?.id ? `&profile=${currentProfile.id}` : "";
+    const response = await fetch(`${API_BASE_URL}/viewings?user=${currentUser.id}${profileQuery}&liked=true&limit=1000`);
     if (!response.ok) throw new Error("Network response was not ok");
     const data = await response.json();
 
@@ -154,6 +154,7 @@ async function loadLikedContentFromDB() {
 async function updateLike(contentId, isLiked) {
   try {
     const currentUser = JSON.parse(localStorage.getItem("currentUser"));
+    const currentProfile = JSON.parse(localStorage.getItem("currentProfile"));
     if (!currentUser || !currentUser.id) {
       console.error("User not found in localStorage");
       return null;
@@ -166,6 +167,7 @@ async function updateLike(contentId, isLiked) {
       },
       body: JSON.stringify({
         user: currentUser.id,
+        profile: currentProfile?.id || null,
         content: contentId,
         episode: null,
         liked: isLiked,
@@ -184,14 +186,14 @@ async function updateLike(contentId, isLiked) {
 async function fetchLikedContent() {
   try {
     const currentUser = JSON.parse(localStorage.getItem("currentUser"));
+    const currentProfile = JSON.parse(localStorage.getItem("currentProfile"));
     if (!currentUser || !currentUser.id) {
       return [];
     }
 
     // Get viewing habits with liked=true
-    const response = await fetch(
-      `${API_BASE_URL}/viewings?user=${currentUser.id}&liked=true&limit=1000`
-    );
+    const profileQuery = currentProfile?.id ? `&profile=${currentProfile.id}` : "";
+    const response = await fetch(`${API_BASE_URL}/viewings?user=${currentUser.id}${profileQuery}&liked=true&limit=1000`);
     if (!response.ok) throw new Error("Network response was not ok");
     const data = await response.json();
 
@@ -273,7 +275,6 @@ function createHorizontalCard(item) {
           isLiked ? "liked" : ""
         }" data-id="${itemId}">
           <span class="heart">${heartIcon}</span>
-          <span class="like-count">${item.likes || 0}</span>
         </button>
       </div>
     </div>
@@ -298,17 +299,10 @@ function createHorizontalCard(item) {
       likedContent[itemId] = true;
       likeButton.classList.add("liked");
       likeButton.querySelector(".heart").textContent = "❤️";
-      likeButton.querySelector(".like-count").textContent =
-        (parseInt(likeButton.querySelector(".like-count").textContent) || 0) +
-        1;
     } else {
       delete likedContent[itemId];
       likeButton.classList.remove("liked");
       likeButton.querySelector(".heart").textContent = "🤍";
-      likeButton.querySelector(".like-count").textContent = Math.max(
-        0,
-        (parseInt(likeButton.querySelector(".like-count").textContent) || 0) - 1
-      );
     }
 
     // Update on server
@@ -325,20 +319,10 @@ function createHorizontalCard(item) {
           delete likedContent[itemId];
           likeButton.classList.remove("liked");
           likeButton.querySelector(".heart").textContent = "🤍";
-          const currentCount =
-            parseInt(likeButton.querySelector(".like-count").textContent) || 0;
-          likeButton.querySelector(".like-count").textContent = Math.max(
-            0,
-            currentCount - 1
-          );
         } else {
           likedContent[itemId] = true;
           likeButton.classList.add("liked");
           likeButton.querySelector(".heart").textContent = "❤️";
-          const currentCount =
-            parseInt(likeButton.querySelector(".like-count").textContent) || 0;
-          likeButton.querySelector(".like-count").textContent =
-            currentCount + 1;
         }
       });
   });
@@ -957,7 +941,6 @@ document.addEventListener("DOMContentLoaded", async function () {
                   isLiked ? "liked" : ""
                 }" data-id="${itemId}">
                   <span class="heart">${heartIcon}</span>
-                  <span class="like-count">${item.likes || 0}</span>
                 </button>
               </div>
             </div>
@@ -985,20 +968,10 @@ document.addEventListener("DOMContentLoaded", async function () {
               likedContent[itemId] = true;
               likeButton.classList.add("liked");
               likeButton.querySelector(".heart").textContent = "❤️";
-              likeButton.querySelector(".like-count").textContent =
-                (parseInt(
-                  likeButton.querySelector(".like-count").textContent
-                ) || 0) + 1;
             } else {
               delete likedContent[itemId];
               likeButton.classList.remove("liked");
               likeButton.querySelector(".heart").textContent = "🤍";
-              likeButton.querySelector(".like-count").textContent = Math.max(
-                0,
-                (parseInt(
-                  likeButton.querySelector(".like-count").textContent
-                ) || 0) - 1
-              );
             }
 
             // Update on server
@@ -1037,21 +1010,10 @@ document.addEventListener("DOMContentLoaded", async function () {
                   delete likedContent[itemId];
                   likeButton.classList.remove("liked");
                   likeButton.querySelector(".heart").textContent = "🤍";
-                  likeButton.querySelector(".like-count").textContent =
-                    Math.max(
-                      0,
-                      (parseInt(
-                        likeButton.querySelector(".like-count").textContent
-                      ) || 0) - 1
-                    );
                 } else {
                   likedContent[itemId] = true;
                   likeButton.classList.add("liked");
                   likeButton.querySelector(".heart").textContent = "❤️";
-                  likeButton.querySelector(".like-count").textContent =
-                    (parseInt(
-                      likeButton.querySelector(".like-count").textContent
-                    ) || 0) + 1;
                 }
               });
           });

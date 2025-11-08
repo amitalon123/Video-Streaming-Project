@@ -212,7 +212,6 @@ function createContentCard(item) {
     item._id
   }">
           <span class="heart">${heartIcon}</span>
-          <span class="like-count">${item.likes || 0}</span>
         </button>
       </div>
       <div class="content-actions">
@@ -253,13 +252,13 @@ function createContentCard(item) {
 async function loadLikedContentFromDB() {
   try {
     const currentUser = JSON.parse(localStorage.getItem("currentUser"));
+    const currentProfile = JSON.parse(localStorage.getItem("currentProfile"));
     if (!currentUser || !currentUser.id) {
       return {};
     }
 
-    const response = await fetch(
-      `${API_BASE_URL}/viewings?user=${currentUser.id}&liked=true&limit=1000`
-    );
+    const profileQuery = currentProfile?.id ? `&profile=${currentProfile.id}` : "";
+    const response = await fetch(`${API_BASE_URL}/viewings?user=${currentUser.id}${profileQuery}&liked=true&limit=1000`);
     if (!response.ok) throw new Error("Network response was not ok");
     const data = await response.json();
 
@@ -286,6 +285,7 @@ async function loadLikedContentFromDB() {
 async function updateLike(contentId, isLiked) {
   try {
     const currentUser = JSON.parse(localStorage.getItem("currentUser"));
+    const currentProfile = JSON.parse(localStorage.getItem("currentProfile"));
     if (!currentUser || !currentUser.id) {
       console.error("User not found in localStorage");
       return null;
@@ -298,6 +298,7 @@ async function updateLike(contentId, isLiked) {
       },
       body: JSON.stringify({
         user: currentUser.id,
+        profile: currentProfile?.id || null,
         content: contentId,
         episode: null,
         liked: isLiked,
@@ -323,18 +324,10 @@ async function toggleLike(contentId, buttonElement) {
     likedContent[contentId] = true;
     buttonElement.classList.add("liked");
     buttonElement.querySelector(".heart").textContent = "❤️";
-    buttonElement.querySelector(".like-count").textContent =
-      (parseInt(buttonElement.querySelector(".like-count").textContent) || 0) +
-      1;
   } else {
     delete likedContent[contentId];
     buttonElement.classList.remove("liked");
     buttonElement.querySelector(".heart").textContent = "🤍";
-    buttonElement.querySelector(".like-count").textContent = Math.max(
-      0,
-      (parseInt(buttonElement.querySelector(".like-count").textContent) || 0) -
-        1
-    );
   }
 
   // Update on server
@@ -350,20 +343,10 @@ async function toggleLike(contentId, buttonElement) {
         delete likedContent[contentId];
         buttonElement.classList.remove("liked");
         buttonElement.querySelector(".heart").textContent = "🤍";
-        const currentCount =
-          parseInt(buttonElement.querySelector(".like-count").textContent) || 0;
-        buttonElement.querySelector(".like-count").textContent = Math.max(
-          0,
-          currentCount - 1
-        );
       } else {
         likedContent[contentId] = true;
         buttonElement.classList.add("liked");
         buttonElement.querySelector(".heart").textContent = "❤️";
-        const currentCount =
-          parseInt(buttonElement.querySelector(".like-count").textContent) || 0;
-        buttonElement.querySelector(".like-count").textContent =
-          currentCount + 1;
       }
     });
 }
