@@ -203,7 +203,7 @@ async function saveVideoProgressToDB(
     const currentUser = JSON.parse(localStorage.getItem("currentUser"));
     const currentProfile = JSON.parse(localStorage.getItem("currentProfile"));
     if (!currentUser || !currentUser.id) {
-      console.error("User not found in localStorage");
+      console.error("User not found in localStorage - cannot save progress");
       return null;
     }
 
@@ -211,22 +211,44 @@ async function saveVideoProgressToDB(
     const lastPositionSec = Math.floor(currentTime);
     const durationSec = Math.floor(duration);
 
+    const payload = {
+      user: currentUser.id,
+      profile: profileId,
+      content: contentId,
+      episode: episodeId || null,
+      lastPositionSec: lastPositionSec,
+      durationSec: durationSec,
+    };
+
+    console.log(`Saving progress to DB:`, {
+      contentId,
+      episodeId: episodeId || "movie",
+      lastPositionSec,
+      durationSec,
+      profileId,
+      percentage:
+        durationSec > 0
+          ? ((lastPositionSec / durationSec) * 100).toFixed(1) + "%"
+          : "0%",
+    });
+
     const response = await fetch(`${API_BASE_URL}/viewings/progress/upsert`, {
       method: "PUT",
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        user: currentUser.id,
-        profile: profileId,
-        content: contentId,
-        episode: episodeId || null,
-        lastPositionSec: lastPositionSec,
-        durationSec: durationSec,
-      }),
+      body: JSON.stringify(payload),
     });
-    if (!response.ok) throw new Error("Network response was not ok");
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(
+        `Network response was not ok: ${response.status} - ${errorText}`
+      );
+    }
+
     const result = await response.json();
+    console.log(`Progress saved successfully to DB:`, result);
     return result;
   } catch (error) {
     console.error("Error saving video progress to DB:", error);
@@ -506,58 +528,100 @@ async function setupMovieProgressTracking(contentId) {
   // Wait for video element to be available (with retry)
   let video = document.querySelector(".video-container video");
   let retries = 0;
-  while (!video && retries < 10) {
+  while (!video && retries < 20) {
     await new Promise((resolve) => setTimeout(resolve, 100));
     video = document.querySelector(".video-container video");
     retries++;
   }
 
   if (!video) {
-    console.error("Video element not found for progress tracking");
+    console.error(
+      "Video element not found for progress tracking after retries"
+    );
     return;
   }
+
+  console.log(
+    `Video element found for movie ${contentId}, readyState: ${video.readyState}`
+  );
 
   // Load saved progress from database
   const savedProgress = await loadVideoProgressFromDB(contentId, null);
   console.log("Loaded progress for movie:", savedProgress);
 
   if (savedProgress && savedProgress.lastPositionSec > 0) {
+    console.log(
+      `Found saved progress: ${savedProgress.lastPositionSec}s / ${savedProgress.durationSec}s`
+    );
+
+    // Function to resume video
+    const resumeVideo = () => {
+      const duration = video.duration || savedProgress.durationSec || 0;
+      const lastPosition = savedProgress.lastPositionSec;
+
+      console.log(
+        `Video readyState: ${video.readyState}, duration: ${duration}, lastPosition: ${lastPosition}`
+      );
+
+      // Resume if position is valid (more than 5 seconds and less than 95% of duration)
+      if (duration > 0 && lastPosition > 5 && lastPosition < duration * 0.95) {
+        video.currentTime = lastPosition;
+        console.log(
+          `Resuming movie ${contentId} from ${lastPosition.toFixed(2)}s (${(
+            (lastPosition / duration) *
+            100
+          ).toFixed(1)}%)`
+        );
+      } else {
+        console.log(
+          `Skipping resume: lastPosition=${lastPosition}, duration=${duration}, condition check failed`
+        );
+      }
+    };
+
     // Wait for video metadata to load
     if (video.readyState >= 1) {
       // Video already has metadata
-      if (
-        savedProgress.lastPositionSec > 5 &&
-        savedProgress.lastPositionSec <
-          (savedProgress.durationSec || video.duration) * 0.95
-      ) {
-        video.currentTime = savedProgress.lastPositionSec;
-        console.log(
-          `Resuming movie ${contentId} from ${savedProgress.lastPositionSec.toFixed(
-            2
-          )}s`
-        );
-      }
+      console.log("Video metadata already loaded, resuming immediately");
+      resumeVideo();
     } else {
       // Wait for metadata
+      console.log("Waiting for video metadata to load...");
       video.addEventListener(
         "loadedmetadata",
         () => {
-          const duration = video.duration || savedProgress.durationSec;
-          if (
-            savedProgress.lastPositionSec > 5 &&
-            savedProgress.lastPositionSec < duration * 0.95
-          ) {
-            video.currentTime = savedProgress.lastPositionSec;
-            console.log(
-              `Resuming movie ${contentId} from ${savedProgress.lastPositionSec.toFixed(
-                2
-              )}s`
-            );
+          console.log("Video metadata loaded, resuming now");
+          resumeVideo();
+        },
+        { once: true }
+      );
+
+      // Also try on loadeddata event as fallback
+      video.addEventListener(
+        "loadeddata",
+        () => {
+          console.log("Video data loaded, attempting resume");
+          if (video.currentTime === 0 && savedProgress.lastPositionSec > 5) {
+            resumeVideo();
+          }
+        },
+        { once: true }
+      );
+
+      // Also try on canplay event (video is ready to play)
+      video.addEventListener(
+        "canplay",
+        () => {
+          console.log("Video can play, checking if resume needed");
+          if (video.currentTime === 0 && savedProgress.lastPositionSec > 5) {
+            resumeVideo();
           }
         },
         { once: true }
       );
     }
+  } else {
+    console.log("No saved progress found or lastPositionSec is 0");
   }
 
   // Hide replay button when video starts playing again
@@ -646,6 +710,54 @@ async function setupMovieProgressTracking(contentId) {
             2
           )}s / ${duration.toFixed(2)}s`
         );
+      }
+    }
+  });
+
+  // Save progress when page is about to unload (beforeunload)
+  window.addEventListener("beforeunload", () => {
+    if (video && !video.paused && !video.ended) {
+      const currentTime = video.currentTime;
+      const duration = video.duration;
+      if (duration > 0) {
+        // Use sendBeacon for reliable transmission on page unload
+        const currentUser = JSON.parse(localStorage.getItem("currentUser"));
+        const currentProfile = JSON.parse(
+          localStorage.getItem("currentProfile")
+        );
+        if (currentUser && currentUser.id) {
+          const profileId = currentProfile?.id || null;
+          const payload = JSON.stringify({
+            user: currentUser.id,
+            profile: profileId,
+            content: contentId,
+            episode: null,
+            lastPositionSec: Math.floor(currentTime),
+            durationSec: Math.floor(duration),
+          });
+
+          // Try to use sendBeacon for reliable transmission
+          // Note: sendBeacon only supports POST, so we'll use a POST endpoint or fallback to fetch
+          if (navigator.sendBeacon) {
+            // sendBeacon only supports POST, so we need to use fetch with keepalive instead
+            fetch(`${API_BASE_URL}/viewings/progress/upsert`, {
+              method: "PUT",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: payload,
+              keepalive: true, // This ensures the request completes even if page closes
+            }).catch((err) =>
+              console.error("Error saving progress on unload:", err)
+            );
+            console.log(
+              "Progress saved via fetch with keepalive on page unload"
+            );
+          } else {
+            // Fallback to regular fetch (may not complete if page closes)
+            saveVideoProgressToDB(contentId, null, currentTime, duration);
+          }
+        }
       }
     }
   });
@@ -826,23 +938,73 @@ async function setupEpisodeProgressTracking(contentId) {
 
     // Load saved progress from database
     const savedProgress = await loadVideoProgressFromDB(contentId, episodeId);
+    console.log(`Loaded progress for episode ${episodeId}:`, savedProgress);
+
     const savedTime = savedProgress
       ? savedProgress.lastPositionSec
       : parseFloat(video.getAttribute("data-saved-time")) || 0;
     const duration =
       video.duration || parseFloat(video.getAttribute("data-duration")) || 0;
 
-    // Resume from saved position when video is loaded
-    video.addEventListener("loadedmetadata", () => {
+    console.log(
+      `Episode ${episodeId} - savedTime: ${savedTime}, duration: ${duration}`
+    );
+
+    // Function to resume episode
+    const resumeEpisode = () => {
       const finalDuration = video.duration || duration;
+      console.log(
+        `Episode ${episodeId} - readyState: ${video.readyState}, finalDuration: ${finalDuration}, savedTime: ${savedTime}`
+      );
+
       // Only resume if saved time is more than 5 seconds and less than 95% of video
-      if (savedTime > 5 && savedTime < finalDuration * 0.95) {
+      if (
+        finalDuration > 0 &&
+        savedTime > 5 &&
+        savedTime < finalDuration * 0.95
+      ) {
         video.currentTime = savedTime;
         console.log(
-          `Resuming episode ${episodeId} from ${savedTime.toFixed(2)}s`
+          `Resuming episode ${episodeId} from ${savedTime.toFixed(2)}s (${(
+            (savedTime / finalDuration) *
+            100
+          ).toFixed(1)}%)`
+        );
+      } else {
+        console.log(
+          `Skipping resume for episode ${episodeId}: savedTime=${savedTime}, finalDuration=${finalDuration}, condition check failed`
         );
       }
-    });
+    };
+
+    // Resume from saved position when video is loaded
+    if (video.readyState >= 1) {
+      console.log(
+        `Episode ${episodeId} metadata already loaded, resuming immediately`
+      );
+      resumeEpisode();
+    } else {
+      video.addEventListener(
+        "loadedmetadata",
+        () => {
+          console.log(`Episode ${episodeId} metadata loaded, resuming now`);
+          resumeEpisode();
+        },
+        { once: true }
+      );
+
+      // Also try on loadeddata event as fallback
+      video.addEventListener(
+        "loadeddata",
+        () => {
+          console.log(`Episode ${episodeId} data loaded, attempting resume`);
+          if (video.currentTime === 0 && savedTime > 5) {
+            resumeEpisode();
+          }
+        },
+        { once: true }
+      );
+    }
 
     // Save progress periodically while playing
     let saveProgressInterval;
@@ -926,6 +1088,62 @@ async function setupEpisodeProgressTracking(contentId) {
         ?.querySelector(".replay-overlay");
       if (replayOverlay) {
         replayOverlay.style.display = "none";
+      }
+    });
+
+    // Save progress when page is about to unload (beforeunload) - for episodes
+    window.addEventListener("beforeunload", () => {
+      if (video && !video.paused && !video.ended) {
+        const currentTime = video.currentTime;
+        const duration = video.duration;
+        if (duration > 0) {
+          // Use sendBeacon for reliable transmission on page unload
+          const currentUser = JSON.parse(localStorage.getItem("currentUser"));
+          const currentProfile = JSON.parse(
+            localStorage.getItem("currentProfile")
+          );
+          if (currentUser && currentUser.id) {
+            const profileId = currentProfile?.id || null;
+            const payload = JSON.stringify({
+              user: currentUser.id,
+              profile: profileId,
+              content: contentId,
+              episode: episodeId,
+              lastPositionSec: Math.floor(currentTime),
+              durationSec: Math.floor(duration),
+            });
+
+            // Try to use fetch with keepalive for reliable transmission on page unload
+            // Note: sendBeacon only supports POST, so we use fetch with keepalive instead
+            if (navigator.sendBeacon || true) {
+              // Always use fetch with keepalive
+              fetch(`${API_BASE_URL}/viewings/progress/upsert`, {
+                method: "PUT",
+                headers: {
+                  "Content-Type": "application/json",
+                },
+                body: payload,
+                keepalive: true, // This ensures the request completes even if page closes
+              }).catch((err) =>
+                console.error(
+                  `Error saving progress on unload for episode ${episodeId}:`,
+                  err
+                )
+              );
+              console.log(
+                `Progress saved via fetch with keepalive on page unload for episode ${episodeId}`
+              );
+            } else {
+              // Fallback to regular fetch (may not complete if page closes)
+              saveVideoProgressToDB(
+                contentId,
+                episodeId,
+                currentTime,
+                duration
+              );
+            }
+          }
+        }
       }
     });
   });
