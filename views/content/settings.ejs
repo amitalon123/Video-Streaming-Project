@@ -3,9 +3,131 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Document</title>
+    <title>Settings & Statistics - Netflix</title>
+    <link rel="icon" type="image/x-icon" href="/Images/nficon2023.ico" />
+    <!-- Bootstrap CSS -->
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css"
+    />
+    <link href="/css/style.css" rel="stylesheet" />
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   </head>
   <body>
-    hello world this is setting page
+    <%- include('../partials/header', { showCategories: false, showSearch: false
+    }) %>
+
+    <!-- Main content area -->
+    <div class="container-fluid settings-page">
+      <div class="settings-container">
+        <!-- Page Header -->
+        <div class="settings-header">
+          <h1 class="settings-title">Settings & Statistics</h1>
+          <p class="settings-subtitle">
+            View your viewing statistics and manage your account
+          </p>
+        </div>
+
+        <!-- Statistics Section -->
+        <div class="statistics-section">
+          <h2 class="section-title">Viewing Statistics</h2>
+
+          <div class="charts-container">
+            <!-- Genre Popularity Chart -->
+            <div class="chart-card">
+              <div class="chart-header">
+                <h3 class="chart-title">
+                  <i class="bi bi-pie-chart-fill"></i> Genre Popularity
+                </h3>
+                <p class="chart-description">
+                  Distribution of your viewing by genre
+                </p>
+              </div>
+              <div class="pie-chart-container">
+                <div class="chart-wrapper pie-chart-wrapper">
+                  <canvas id="genreChart"></canvas>
+                  <div
+                    id="genreChartNoData"
+                    class="no-data-message"
+                    style="display: none"
+                  >
+                    NO DATA
+                  </div>
+                </div>
+                <div class="pie-chart-legend" id="genreChartLegend">
+                  <!-- Custom legend will be inserted here -->
+                </div>
+              </div>
+            </div>
+
+            <!-- Views Per Profile Chart -->
+            <div class="chart-card">
+              <div class="chart-header">
+                <h3 class="chart-title">
+                  <i class="bi bi-bar-chart-fill"></i> Views Per Profile
+                </h3>
+                <p class="chart-description">
+                  Total views for each profile in the last day
+                </p>
+              </div>
+              <div class="chart-wrapper">
+                <canvas id="profileViewsChart"></canvas>
+                <div
+                  id="profileViewsChartNoData"
+                  class="no-data-message"
+                  style="display: none"
+                >
+                  NO DATA
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Actions Section -->
+        <div class="actions-section">
+          <div class="action-card">
+            <div class="action-icon">
+              <i class="bi bi-people-fill"></i>
+            </div>
+            <div class="action-content">
+              <h3 class="action-title">Manage Profiles</h3>
+              <p class="action-description">
+                Edit, add, or delete profiles associated with your account
+              </p>
+              <a href="/profiles" class="btn btn-primary btn-edit-profiles">
+                <i class="bi bi-pencil-fill"></i> Edit Profiles
+              </a>
+            </div>
+          </div>
+        </div>
+
+        <!-- Loading Indicator -->
+        <div
+          id="loadingIndicator"
+          class="loading-indicator"
+          style="display: none"
+        >
+          <div class="spinner"></div>
+          <p>Loading statistics...</p>
+        </div>
+
+        <!-- Error Message -->
+        <div
+          id="errorMessage"
+          class="error-message"
+          style="display: none"
+        ></div>
+      </div>
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="/js/settings.js"></script>
   </body>
 </html>
