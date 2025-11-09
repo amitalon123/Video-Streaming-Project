@@ -870,6 +870,16 @@ document.addEventListener("DOMContentLoaded", async function () {
     // This ensures that if user searches, home sections won't interfere
     isLoadingHomeSections = false;
 
+    // Hide sort select when performing search (if there's a search term)
+    const sortSelect = document.getElementById("sortSelect");
+    if (sortSelect) {
+      if (searchTerm) {
+        sortSelect.style.display = "none";
+      } else {
+        sortSelect.style.display = "block";
+      }
+    }
+
     if (!searchTerm) {
       console.log("No search term, showing all content");
     }
@@ -892,6 +902,9 @@ document.addEventListener("DOMContentLoaded", async function () {
       // If input is hidden, show it
       searchInputContainer.style.display = "block";
       searchInput.focus();
+      // Hide sort select when search is active
+      const sortSelect = document.getElementById("sortSelect");
+      if (sortSelect) sortSelect.style.display = "none";
     }
   });
 
@@ -910,6 +923,9 @@ document.addEventListener("DOMContentLoaded", async function () {
       !searchIcon.contains(e.target)
     ) {
       searchInputContainer.style.display = "none";
+      // Show sort select when search is closed
+      const sortSelect = document.getElementById("sortSelect");
+      if (sortSelect) sortSelect.style.display = "block";
     }
   });
 
@@ -935,6 +951,10 @@ document.addEventListener("DOMContentLoaded", async function () {
         if (searchTerm) {
           // Stop any ongoing home sections loading
           isLoadingHomeSections = false;
+
+          // Hide sort select when search is active
+          const sortSelect = document.getElementById("sortSelect");
+          if (sortSelect) sortSelect.style.display = "none";
 
           // Hide home sections (popular, new releases, genres) and their titles
           const popularSection = document
@@ -1007,6 +1027,10 @@ document.addEventListener("DOMContentLoaded", async function () {
           // No search term - show regular home sections
           // Reset the flag first to allow home sections to load
           isLoadingHomeSections = false;
+
+          // Show sort select when no search term
+          const sortSelect = document.getElementById("sortSelect");
+          if (sortSelect) sortSelect.style.display = "block";
 
           // Hide search results section
           const searchSection = container.querySelector(
