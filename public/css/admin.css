@@ -592,6 +592,7 @@ select.form-control {
   display: flex;
   justify-content: center;
   align-items: center;
+  flex-direction: column;
 }
 
 .modal-content {
@@ -604,6 +605,8 @@ select.form-control {
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
   animation: scaleIn 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   text-align: center;
+  position: relative;
+  margin: auto;
 }
 
 @keyframes scaleIn {
