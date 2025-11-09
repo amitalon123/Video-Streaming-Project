@@ -260,6 +260,15 @@ exports.getRecommendations = async (req, res) => {
     likedContent = likedContent || [];
     excludeIds = excludeIds || [];
 
+    console.log("=== RECOMMENDATIONS API DEBUG ===");
+    console.log("Request params:", {
+      limit,
+      likedGenresCount: likedGenres.length,
+      likedGenres,
+      likedContentCount: likedContent.length,
+      excludeIdsCount: excludeIds.length,
+    });
+
     // מניעת המלצה על תכנים שכבר נצפו
     if (Array.isArray(excludeIds) && excludeIds.length > 0) {
       excludeIds = excludeIds.map((id) => id.toString());
@@ -270,6 +279,7 @@ exports.getRecommendations = async (req, res) => {
 
     // השלב הראשון: סינון תכנים שכבר נצפו
     if (excludeIds.length > 0) {
+      console.log(`Excluding ${excludeIds.length} content items that user has already watched/liked`);
       pipeline.push({
         $match: {
           _id: {
@@ -281,6 +291,7 @@ exports.getRecommendations = async (req, res) => {
 
     // אם יש ז'אנרים מועדפים, ניתן ניקוד גבוה יותר לתכנים מאותם ז'אנרים
     if (likedGenres.length > 0) {
+      console.log(`Filtering by ${likedGenres.length} preferred genres:`, likedGenres);
       pipeline.push({
         $addFields: {
           // חישוב מספר הז'אנרים המשותפים עם הז'אנרים המועדפים
@@ -296,18 +307,32 @@ exports.getRecommendations = async (req, res) => {
       });
 
       // סינון תכנים שאין להם ז'אנר משותף
+      // אבל אם אין תוכן עם ז'אנרים תואמים, נמלא עם תוכן פופולרי אחר כך
       pipeline.push({
         $match: {
           genreMatchCount: { $gt: 0 },
         },
       });
     } else {
+      console.log("No preferred genres, will recommend based on popularity only");
       // אם אין ז'אנרים מועדפים, נוסיף שדה ריק כדי לא לשבור את המשך הפיפליין
       pipeline.push({
         $addFields: {
           genreMatchCount: 0,
         },
       });
+    }
+    
+    // Count how many documents match before limiting
+    const countPipeline = [...pipeline];
+    countPipeline.push({ $count: "total" });
+    const countResult = await Content.aggregate(countPipeline);
+    const totalAvailable = countResult[0]?.total || 0;
+    console.log(`Found ${totalAvailable} content items matching criteria (before limit)`);
+    
+    // If no content matches the genre criteria, we'll fill with popular content later
+    if (totalAvailable === 0 && likedGenres.length > 0) {
+      console.log(`⚠️ No content found with matching genres. Will fill with popular content.`);
     }
 
     // הוספת ניקוד משוקלל המשלב פופולריות וז'אנרים מועדפים
@@ -347,7 +372,82 @@ exports.getRecommendations = async (req, res) => {
     });
 
     // הרצת השאילתה המורכבת
-    const recommendations = await Content.aggregate(pipeline);
+    console.log("Running aggregation pipeline with", pipeline.length, "stages");
+    let recommendations = await Content.aggregate(pipeline);
+
+    console.log("Aggregation result:", {
+      requestedLimit: limit,
+      actualCount: recommendations.length,
+      recommendations: recommendations.map((item) => ({
+        id: item._id,
+        title: item.title,
+        genreMatchCount: item.genreMatchCount,
+        recommendationScore: item.recommendationScore,
+      })),
+    });
+
+    // Always try to fill with popular content if we don't have enough recommendations
+    // This ensures we always return the requested number of recommendations (if available)
+    if (recommendations.length < limit) {
+      console.log(`Only found ${recommendations.length} recommendations, filling with popular content...`);
+      
+      // Get IDs we already have
+      const existingIds = new Set(recommendations.map((r) => r._id.toString()));
+      if (excludeIds.length > 0) {
+        excludeIds.forEach((id) => existingIds.add(id.toString()));
+      }
+
+      const neededCount = limit - recommendations.length;
+      console.log(`Need ${neededCount} more recommendations. Excluding ${existingIds.size} content items.`);
+      console.log(`ExcludeIds (first 10):`, excludeIds.slice(0, 10)); // Log first 10 for debugging
+      console.log(`Existing recommendation IDs (first 10):`, recommendations.map(r => r._id.toString()).slice(0, 10));
+
+      // First, let's check how many total content items exist in the database
+      const totalContentCount = await Content.countDocuments({});
+      console.log(`Total content in database: ${totalContentCount}`);
+
+      // Fetch popular content that's not already in recommendations or excludeIds
+      const additionalContent = await Content.find({
+        _id: { $nin: Array.from(existingIds).map((id) => new mongoose.Types.ObjectId(id)) },
+      })
+        .populate("genres", "name")
+        .sort({ views: -1, likes: -1, releaseYear: -1 })
+        .limit(neededCount);
+
+      console.log(`Found ${additionalContent.length} additional popular content items`);
+      
+      if (additionalContent.length === 0) {
+        console.warn(`⚠️ No additional content available.`);
+        console.warn(`Total content in DB: ${totalContentCount}`);
+        console.warn(`ExcludeIds count: ${excludeIds.length}`);
+        console.warn(`Existing recommendations: ${recommendations.length}`);
+        console.warn(`This means all ${totalContentCount} content items are already in excludeIds or recommendations.`);
+      }
+      
+      // Convert to same format as recommendations
+      const additionalFormatted = additionalContent.map((item) => {
+        const itemObj = item.toObject();
+        // Calculate genreMatchCount for additional content (might have some matching genres)
+        let genreMatchCount = 0;
+        if (likedGenres.length > 0 && item.genres && Array.isArray(item.genres)) {
+          const itemGenreIds = item.genres.map((g) => 
+            typeof g === "object" ? g._id.toString() : g.toString()
+          );
+          const matchingGenres = likedGenres.filter((gId) => 
+            itemGenreIds.includes(gId.toString())
+          );
+          genreMatchCount = matchingGenres.length;
+        }
+        itemObj.genreMatchCount = genreMatchCount;
+        itemObj.recommendationScore = (item.views || 0) + (item.likes || 0) * 5;
+        return itemObj;
+      });
+
+      recommendations = [...recommendations, ...additionalFormatted];
+      console.log(`Total recommendations after filling: ${recommendations.length}`);
+    }
+
+    console.log("=== END RECOMMENDATIONS API DEBUG ===");
 
     res.json({
       success: true,
@@ -355,6 +455,7 @@ exports.getRecommendations = async (req, res) => {
       data: recommendations,
     });
   } catch (err) {
+    console.error("Error in getRecommendations:", err);
     res.status(500).json({ success: false, error: err.message });
   }
 };
