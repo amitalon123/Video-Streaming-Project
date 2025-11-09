@@ -1,5 +1,5 @@
 document.addEventListener('DOMContentLoaded', () => {
-  if (!localStorage.getItem('isLoggedIn')) {
+    if (!localStorage.getItem('isLoggedIn')) {
     window.location.href = '/login';
     return;
   }
@@ -61,7 +61,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!apiAvailable) {
         window.alert('Profile management is temporarily unavailable. Please try again later.');
         return;
-      }
+    }
 
       isManaging = !isManaging;
       manageBtn.textContent = isManaging ? 'Done' : 'Manage Profiles';
@@ -212,8 +212,8 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function createProfileElement(profile) {
-    const profileItem = document.createElement('div');
-    profileItem.className = 'profile-item';
+        const profileItem = document.createElement('div');
+        profileItem.className = 'profile-item';
     profileItem.dataset.profileId = profile.id;
 
     if (isManaging) {
