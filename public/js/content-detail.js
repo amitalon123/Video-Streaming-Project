@@ -563,8 +563,8 @@ async function setupMovieProgressTracking(contentId) {
         `Video readyState: ${video.readyState}, duration: ${duration}, lastPosition: ${lastPosition}`
       );
 
-      // Resume if position is valid (more than 5 seconds and less than 95% of duration)
-      if (duration > 0 && lastPosition > 5 && lastPosition < duration * 0.95) {
+      // Resume if position is valid (more than 1 second and less than 95% of duration)
+      if (duration > 0 && lastPosition >= 1 && lastPosition < duration * 0.95) {
         video.currentTime = lastPosition;
         console.log(
           `Resuming movie ${contentId} from ${lastPosition.toFixed(2)}s (${(
@@ -601,7 +601,7 @@ async function setupMovieProgressTracking(contentId) {
         "loadeddata",
         () => {
           console.log("Video data loaded, attempting resume");
-          if (video.currentTime === 0 && savedProgress.lastPositionSec > 5) {
+          if (video.currentTime === 0 && savedProgress.lastPositionSec >= 1) {
             resumeVideo();
           }
         },
@@ -613,7 +613,7 @@ async function setupMovieProgressTracking(contentId) {
         "canplay",
         () => {
           console.log("Video can play, checking if resume needed");
-          if (video.currentTime === 0 && savedProgress.lastPositionSec > 5) {
+          if (video.currentTime === 0 && savedProgress.lastPositionSec >= 1) {
             resumeVideo();
           }
         },
@@ -957,10 +957,10 @@ async function setupEpisodeProgressTracking(contentId) {
         `Episode ${episodeId} - readyState: ${video.readyState}, finalDuration: ${finalDuration}, savedTime: ${savedTime}`
       );
 
-      // Only resume if saved time is more than 5 seconds and less than 95% of video
+      // Only resume if saved time is more than 1 second and less than 95% of video
       if (
         finalDuration > 0 &&
-        savedTime > 5 &&
+        savedTime >= 1 &&
         savedTime < finalDuration * 0.95
       ) {
         video.currentTime = savedTime;
@@ -998,7 +998,7 @@ async function setupEpisodeProgressTracking(contentId) {
         "loadeddata",
         () => {
           console.log(`Episode ${episodeId} data loaded, attempting resume`);
-          if (video.currentTime === 0 && savedTime > 5) {
+          if (video.currentTime === 0 && savedTime >= 1) {
             resumeEpisode();
           }
         },
