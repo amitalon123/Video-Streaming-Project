@@ -4,6 +4,9 @@ const API_BASE_URL = "http://localhost:3000/api";
 // Global state - liked content from database
 let likedContent = {};
 
+// Global reference to search input (will be set in DOMContentLoaded)
+let searchInput = null;
+
 // API Functions - לשימוש עתידי
 async function fetchAllContent(searchTerm = "", sortBy = "") {
   try {
@@ -126,8 +129,12 @@ async function loadLikedContentFromDB() {
       return {};
     }
 
-    const profileQuery = currentProfile?.id ? `&profile=${currentProfile.id}` : "";
-    const response = await fetch(`${API_BASE_URL}/viewings?user=${currentUser.id}${profileQuery}&liked=true&limit=1000`);
+    const profileQuery = currentProfile?.id
+      ? `&profile=${currentProfile.id}`
+      : "";
+    const response = await fetch(
+      `${API_BASE_URL}/viewings?user=${currentUser.id}${profileQuery}&liked=true&limit=1000`
+    );
     if (!response.ok) throw new Error("Network response was not ok");
     const data = await response.json();
 
@@ -192,8 +199,12 @@ async function fetchLikedContent() {
     }
 
     // Get viewing habits with liked=true
-    const profileQuery = currentProfile?.id ? `&profile=${currentProfile.id}` : "";
-    const response = await fetch(`${API_BASE_URL}/viewings?user=${currentUser.id}${profileQuery}&liked=true&limit=1000`);
+    const profileQuery = currentProfile?.id
+      ? `&profile=${currentProfile.id}`
+      : "";
+    const response = await fetch(
+      `${API_BASE_URL}/viewings?user=${currentUser.id}${profileQuery}&liked=true&limit=1000`
+    );
     if (!response.ok) throw new Error("Network response was not ok");
     const data = await response.json();
 
@@ -277,7 +288,11 @@ function createHorizontalCard(item) {
       <img src="${imageUrl}" alt="${
     item.title
   }" onerror="this.src='/Images/placeholder.jpg'">
-      ${window.ViewingActions && window.ViewingActions.isWatched(itemId) ? '<span class="watched-badge">✓ Watched</span>' : ''}
+      ${
+        window.ViewingActions && window.ViewingActions.isWatched(itemId)
+          ? '<span class="watched-badge">✓ Watched</span>'
+          : ""
+      }
     </div>
     <div class="content-info">
       <h3 class="content-title">${item.title}</h3>
@@ -371,6 +386,18 @@ let isLoadingHomeSections = false;
 
 async function displayHomeSections() {
   console.log("displayHomeSections called");
+
+  // Check if there's a search term - if so, don't display home sections
+  // This check MUST be first, before any other checks
+  const searchTerm = searchInput ? searchInput.value.trim() : "";
+  if (searchTerm) {
+    console.log(
+      "Search term exists, skipping home sections display:",
+      searchTerm
+    );
+    isLoadingHomeSections = false; // Reset flag so it can run again when search is cleared
+    return;
+  }
 
   // Prevent multiple simultaneous calls
   if (isLoadingHomeSections) {
@@ -831,13 +858,61 @@ document.addEventListener("DOMContentLoaded", async function () {
   const searchInputContainer = document.querySelector(
     ".search-input-container"
   );
+  // Set global searchInput reference (defined at top of file)
+  searchInput = document.getElementById("searchInput");
 
+  // Function to perform search (defined here so it's accessible from both icon click and Enter key)
+  const performSearch = () => {
+    const searchTerm = searchInput.value.trim();
+    console.log("Performing search for:", searchTerm);
+
+    // Reset the home sections loading flag when performing a search
+    // This ensures that if user searches, home sections won't interfere
+    isLoadingHomeSections = false;
+
+    // Hide sort select when performing search (if there's a search term)
+    const sortSelect = document.getElementById("sortSelect");
+    if (sortSelect) {
+      if (searchTerm) {
+        sortSelect.style.display = "none";
+      } else {
+        sortSelect.style.display = "block";
+      }
+    }
+
+    if (!searchTerm) {
+      console.log("No search term, showing all content");
+    }
+
+    const activeCategory = document
+      .querySelector(".nav-link.active")
+      .getAttribute("data-category");
+    displayContent(activeCategory);
+  };
+
+  // Toggle search input visibility and perform search if input is visible
   searchIcon.addEventListener("click", (e) => {
     e.stopPropagation();
     const isVisible = searchInputContainer.style.display === "block";
-    searchInputContainer.style.display = isVisible ? "none" : "block";
-    if (!isVisible) {
-      document.getElementById("searchInput").focus();
+
+    if (isVisible) {
+      // If input is visible, perform search
+      performSearch();
+    } else {
+      // If input is hidden, show it
+      searchInputContainer.style.display = "block";
+      searchInput.focus();
+      // Hide sort select when search is active
+      const sortSelect = document.getElementById("sortSelect");
+      if (sortSelect) sortSelect.style.display = "none";
+    }
+  });
+
+  // Search on Enter key press
+  searchInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      performSearch();
     }
   });
 
@@ -848,6 +923,9 @@ document.addEventListener("DOMContentLoaded", async function () {
       !searchIcon.contains(e.target)
     ) {
       searchInputContainer.style.display = "none";
+      // Show sort select when search is closed
+      const sortSelect = document.getElementById("sortSelect");
+      if (sortSelect) sortSelect.style.display = "block";
     }
   });
 
@@ -864,9 +942,125 @@ document.addEventListener("DOMContentLoaded", async function () {
     if (container) {
       container.style.display = "block";
 
-      // Special handling for home page - display horizontal sections
+      // Special handling for home page
       if (category === "home") {
-        await displayHomeSections();
+        // Get search term from input
+        const searchTerm = searchInput ? searchInput.value.trim() : "";
+
+        // If there's a search term, show search results instead of home sections
+        if (searchTerm) {
+          // Stop any ongoing home sections loading
+          isLoadingHomeSections = false;
+
+          // Hide sort select when search is active
+          const sortSelect = document.getElementById("sortSelect");
+          if (sortSelect) sortSelect.style.display = "none";
+
+          // Hide home sections (popular, new releases, genres) and their titles
+          const popularSection = document
+            .querySelector("#popularSection")
+            ?.closest(".content-section");
+          const newReleasesSection = document
+            .querySelector("#newReleasesSection")
+            ?.closest(".content-section");
+          const popularRow = document.getElementById("popularRow");
+          const newReleasesRow = document.getElementById("newReleasesRow");
+          const genreSectionsContainer =
+            document.getElementById("genreSections");
+
+          if (popularSection) popularSection.style.display = "none";
+          if (newReleasesSection) newReleasesSection.style.display = "none";
+          if (popularRow) popularRow.style.display = "none";
+          if (newReleasesRow) newReleasesRow.style.display = "none";
+          if (genreSectionsContainer)
+            genreSectionsContainer.style.display = "none";
+
+          // Create search results section with horizontal scroll (like Netflix)
+          let searchSection = container.querySelector(
+            ".search-results-section"
+          );
+          if (!searchSection) {
+            searchSection = document.createElement("section");
+            searchSection.className = "content-section search-results-section";
+            searchSection.innerHTML = `
+              <h2 class="section-title">Search Results</h2>
+              <div class="horizontal-scroll">
+                <div class="content-row" id="searchResultsRow"></div>
+              </div>
+            `;
+            container.appendChild(searchSection);
+          }
+
+          searchSection.style.display = "block";
+          const searchResultsRow = document.getElementById("searchResultsRow");
+          searchResultsRow.innerHTML = `<div class="loading">Searching for "${searchTerm}"...</div>`;
+
+          try {
+            const sortType = sortSelect.value;
+            const contentToShow = await fetchAllContent(searchTerm, sortType);
+
+            if (contentToShow.length === 0) {
+              searchResultsRow.innerHTML = `
+                <div class="no-content" style="padding: 40px; text-align: center; color: #aaa;">
+                  <p>No content found for "${searchTerm}". Try a different search term.</p>
+                </div>
+              `;
+              return;
+            }
+
+            // Display search results in horizontal row (like Netflix)
+            // displayContentInRow already handles card creation and event listeners
+            displayContentInRow(searchResultsRow, contentToShow);
+          } catch (error) {
+            console.error("Error displaying search results:", error);
+            const searchResultsRow =
+              document.getElementById("searchResultsRow");
+            if (searchResultsRow) {
+              searchResultsRow.innerHTML = `
+                <div class="error" style="padding: 40px; text-align: center; color: #aaa;">
+                  <p>Error loading search results. Please try again later.</p>
+                </div>
+              `;
+            }
+          }
+        } else {
+          // No search term - show regular home sections
+          // Reset the flag first to allow home sections to load
+          isLoadingHomeSections = false;
+
+          // Show sort select when no search term
+          const sortSelect = document.getElementById("sortSelect");
+          if (sortSelect) sortSelect.style.display = "block";
+
+          // Hide search results section
+          const searchSection = container.querySelector(
+            ".search-results-section"
+          );
+          if (searchSection) searchSection.style.display = "none";
+
+          // Show home sections (popular, new releases, genres) and their titles
+          const popularSection = document
+            .querySelector("#popularSection")
+            ?.closest(".content-section");
+          const newReleasesSection = document
+            .querySelector("#newReleasesSection")
+            ?.closest(".content-section");
+          const popularRow = document.getElementById("popularRow");
+          const newReleasesRow = document.getElementById("newReleasesRow");
+          const genreSectionsContainer =
+            document.getElementById("genreSections");
+          const grid = container.querySelector(".content-grid");
+
+          if (popularSection) popularSection.style.display = "block";
+          if (newReleasesSection) newReleasesSection.style.display = "block";
+          if (popularRow) popularRow.style.display = "block";
+          if (newReleasesRow) newReleasesRow.style.display = "block";
+          if (genreSectionsContainer)
+            genreSectionsContainer.style.display = "block";
+          if (grid) grid.style.display = "none";
+
+          await displayHomeSections();
+        }
         return;
       }
 
@@ -879,8 +1073,16 @@ document.addEventListener("DOMContentLoaded", async function () {
       try {
         // Choose which content to display - from API
         let contentToShow = [];
-        const searchTerm = searchInput.value.toLowerCase();
+        // Get search term from input (trim whitespace, but keep original case for better matching)
+        const searchTerm = searchInput ? searchInput.value.trim() : "";
         const sortType = sortSelect.value;
+
+        console.log(
+          "Displaying content for category:",
+          category,
+          "with search term:",
+          searchTerm
+        );
 
         if (category === "tvshows") {
           contentToShow = await fetchTVShows(searchTerm, sortType);
@@ -960,7 +1162,11 @@ document.addEventListener("DOMContentLoaded", async function () {
               <img src="${imageUrl}" alt="${
             item.title
           }" onerror="this.src='/Images/placeholder.jpg'">
-              ${window.ViewingActions && window.ViewingActions.isWatched(itemId) ? '<span class="watched-badge">✓ Watched</span>' : ''}
+              ${
+                window.ViewingActions && window.ViewingActions.isWatched(itemId)
+                  ? '<span class="watched-badge">✓ Watched</span>'
+                  : ""
+              }
             </div>
             <div class="content-info">
               <h3 class="content-title">${item.title}</h3>
@@ -1058,7 +1264,11 @@ document.addEventListener("DOMContentLoaded", async function () {
           const watchButton = card.querySelector(".watch-button");
           if (watchButton && window.ViewingActions) {
             const posterEl = card.querySelector(".content-poster");
-            window.ViewingActions.attachWatchHandler(watchButton, posterEl, itemId);
+            window.ViewingActions.attachWatchHandler(
+              watchButton,
+              posterEl,
+              itemId
+            );
           }
 
           grid.appendChild(card);
@@ -1094,7 +1304,7 @@ document.addEventListener("DOMContentLoaded", async function () {
   });
 
   const contentGrid = document.getElementById("contentGrid");
-  const searchInput = document.getElementById("searchInput");
+  // searchInput is already defined above in the search icon functionality section
   const sortSelect = document.getElementById("sortSelect");
 
   // Load liked content from database
@@ -1107,13 +1317,8 @@ document.addEventListener("DOMContentLoaded", async function () {
   displayContent("home");
 
   // Event listeners for search and sort
-  searchInput.addEventListener("input", () => {
-    const searchTerm = searchInput.value.toLowerCase();
-    const activeCategory = document
-      .querySelector(".nav-link.active")
-      .getAttribute("data-category");
-    displayContent(activeCategory);
-  });
+  // Real-time search removed - search only happens on Enter key or icon click
+  // (Event listeners are defined above in the search icon functionality section)
 
   sortSelect.addEventListener("change", () => {
     const activeCategory = document
@@ -1146,8 +1351,9 @@ document.addEventListener("click", (e) => {
 // Add click handlers for dropdown items
 document.querySelectorAll(".dropdown-item").forEach((item) => {
   item.addEventListener("click", (e) => {
-    const action = e.target.closest(".dropdown-item")?.dataset.action || 
-                   e.target.closest(".dropdown-item")?.textContent.trim();
+    const action =
+      e.target.closest(".dropdown-item")?.dataset.action ||
+      e.target.closest(".dropdown-item")?.textContent.trim();
     switch (action) {
       case "settings":
       case "User":

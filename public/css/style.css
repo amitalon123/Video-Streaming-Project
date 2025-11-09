@@ -1049,13 +1049,14 @@ body {
 }
 
 .horizontal-scroll {
-  overflow-x: auto;
-  overflow-y: hidden;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
   padding: 10px 0;
   scroll-behavior: smooth;
   /* Hide scrollbar but keep functionality */
   scrollbar-width: thin;
   scrollbar-color: #333 #141414;
+  display: block !important;
 }
 
 .horizontal-scroll::-webkit-scrollbar {
@@ -1076,20 +1077,25 @@ body {
 }
 
 .content-row {
-  display: flex;
+  display: flex !important;
+  flex-direction: row !important;
   gap: 15px;
   padding: 0 15px;
   min-width: max-content;
+  flex-wrap: nowrap !important;
 }
 
 .content-row .content-card {
-  flex: 0 0 200px; /* Fixed width for cards in horizontal scroll */
-  width: 200px;
+  flex: 0 0 200px !important; /* Fixed width for cards in horizontal scroll */
+  width: 200px !important;
+  min-width: 200px !important;
+  max-width: 200px !important;
   height: 370px; /* Increased from 300px to accommodate larger poster */
   padding: 0;
   background-color: transparent;
   position: relative;
   transition: transform 0.3s ease;
+  display: block !important;
 }
 
 .content-row .content-card:hover {
@@ -1133,6 +1139,54 @@ body {
   justify-content: space-between;
   align-items: center;
   font-size: 0.75rem;
+}
+
+/* Ensure all sections with horizontal-scroll use horizontal layout */
+#popularSection .content-row,
+#newReleasesSection .content-row,
+.horizontal-scroll .content-row {
+  display: flex !important;
+  flex-direction: row !important;
+  gap: 15px;
+  padding: 0 15px;
+  min-width: max-content;
+  flex-wrap: nowrap !important;
+}
+
+#popularSection .content-row .content-card,
+#newReleasesSection .content-row .content-card,
+.horizontal-scroll .content-row .content-card {
+  flex: 0 0 200px !important;
+  width: 200px !important;
+  min-width: 200px !important;
+  max-width: 200px !important;
+  display: block !important;
+}
+
+/* Ensure search results section uses horizontal scroll */
+.search-results-section .horizontal-scroll {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 10px 0;
+  scroll-behavior: smooth;
+  scrollbar-width: thin;
+  scrollbar-color: #333 #141414;
+}
+
+.search-results-section .content-row {
+  display: flex !important;
+  flex-direction: row !important;
+  gap: 15px;
+  padding: 0 15px;
+  min-width: max-content;
+  flex-wrap: nowrap !important;
+}
+
+.search-results-section .content-card {
+  flex: 0 0 200px !important;
+  width: 200px !important;
+  min-width: 200px !important;
+  max-width: 200px !important;
 }
 
 /* Genre Page Styles */

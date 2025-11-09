@@ -11,9 +11,14 @@ exports.getAllContent = async (req, res) => {
       filter.type = req.query.type;
     }
 
-    // Enable text search
+    // Enable text search - search by title and description (case-insensitive partial match)
     if (req.query.search) {
-      filter.$text = { $search: req.query.search };
+      const searchTerm = req.query.search.trim();
+      // Use $or to search in both title and description
+      filter.$or = [
+        { title: { $regex: searchTerm, $options: "i" } },
+        { description: { $regex: searchTerm, $options: "i" } }
+      ];
     }
 
     // Filter by year
