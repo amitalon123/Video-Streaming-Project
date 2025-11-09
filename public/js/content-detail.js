@@ -868,44 +868,54 @@ async function displaySeasonEpisodes(episodes, seriesTitle, contentId) {
       const isCompleted = progress.isCompleted;
 
       return `
-      <div class="episode-card" data-episode-id="${episodeId}">
-        <div class="episode-header">
-          <h3>${episode.title}</h3>
-          ${
-            hasProgress
-              ? `
-          <div class="episode-progress-info">
-            <span class="progress-percentage">${progressPercentage}%</span>
-            ${
-              isCompleted
-                ? '<span class="completed-badge">✓ Completed</span>'
-                : ""
-            }
-          </div>
-          `
-              : ""
-          }
-        </div>
-        <div class="episode-number">S${episode.seasonNumber} E${
+      <div class="episode-card-small" data-episode-id="${episodeId}">
+        <div class="episode-card-content">
+          <div class="episode-info">
+            <div class="episode-header-small">
+              <span class="episode-number-small">S${episode.seasonNumber} E${
         episode.episodeNumber
-      }</div>
-        <div class="episode-description">${episode.description}</div>
-        <div class="episode-meta">
-          <span class="duration">${formatRuntime(episode.duration)}</span>
+      }</span>
+              <h4 class="episode-title-small">${episode.title}</h4>
+              ${
+                hasProgress
+                  ? `
+              <div class="episode-progress-info-small">
+                <span class="progress-percentage-small">${progressPercentage}%</span>
+                ${
+                  isCompleted
+                    ? '<span class="completed-badge-small">✓</span>'
+                    : ""
+                }
+              </div>
+              `
+                  : ""
+              }
+            </div>
+            <div class="episode-meta-small">
+              <span class="duration-small">${formatRuntime(
+                episode.duration
+              )}</span>
+              ${
+                hasProgress
+                  ? `
+              <div class="episode-progress-bar-container-small">
+                <div class="episode-progress-bar-small" style="width: ${progressPercentage}%"></div>
+              </div>
+              `
+                  : ""
+              }
+            </div>
+          </div>
+          <button class="episode-play-button" data-episode-id="${episodeId}" data-video-url="${
+        videoUrl || ""
+      }">
+            <i class="bi bi-play-fill"></i>
+          </button>
         </div>
-        ${
-          hasProgress
-            ? `
-        <div class="episode-progress-bar-container">
-          <div class="episode-progress-bar" style="width: ${progressPercentage}%"></div>
-        </div>
-        `
-            : ""
-        }
         ${
           videoUrl
             ? `
-        <div class="episode-video">
+        <div class="episode-video-hidden" style="display: none;">
           <video 
             controls 
             width="100%" 
@@ -926,11 +936,79 @@ async function displaySeasonEpisodes(episodes, seriesTitle, contentId) {
 
   // Set up video progress tracking after episodes are rendered
   setupEpisodeProgressTracking(contentId);
+
+  // Set up play button click handlers for small episode cards
+  document.querySelectorAll(".episode-play-button").forEach((button) => {
+    button.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const episodeId = button.getAttribute("data-episode-id");
+      const videoUrl = button.getAttribute("data-video-url");
+      const episodeCard = button.closest(".episode-card-small");
+
+      if (!episodeCard || !videoUrl) return;
+
+      // Find or create video element
+      let videoContainer = episodeCard.querySelector(".episode-video-hidden");
+      if (!videoContainer) {
+        // Create video container if it doesn't exist
+        videoContainer = document.createElement("div");
+        videoContainer.className = "episode-video-hidden";
+        episodeCard.appendChild(videoContainer);
+      }
+
+      // Check if video already exists
+      let video = videoContainer.querySelector("video");
+      if (!video) {
+        // Get saved progress for this episode
+        const savedProgress = await loadVideoProgressFromDB(
+          contentId,
+          episodeId
+        );
+        const savedTime = savedProgress ? savedProgress.lastPositionSec : 0;
+        const duration = savedProgress ? savedProgress.durationSec : 0;
+
+        // Create video element
+        video = document.createElement("video");
+        video.controls = true;
+        video.width = "100%";
+        video.setAttribute("data-episode-id", episodeId);
+        video.setAttribute("data-saved-time", savedTime);
+        video.setAttribute("data-duration", duration);
+        video.innerHTML = `<source src="${videoUrl}" type="video/mp4">Your browser does not support the video tag.`;
+        videoContainer.appendChild(video);
+
+        // Set up progress tracking for this video
+        setupVideoProgressTracking(video, contentId, episodeId);
+
+        // Show and play video
+        videoContainer.classList.add("show");
+        video.load();
+        video.play().catch((err) => {
+          console.error("Error playing video:", err);
+        });
+      } else {
+        // Toggle video visibility if it already exists
+        if (videoContainer.classList.contains("show")) {
+          videoContainer.classList.remove("show");
+          video.pause();
+        } else {
+          videoContainer.classList.add("show");
+          // Load and play video
+          video.load();
+          video.play().catch((err) => {
+            console.error("Error playing video:", err);
+          });
+        }
+      }
+    });
+  });
 }
 
-// Set up progress tracking for all episode videos
+// Set up progress tracking for all episode videos (legacy - for old format)
 async function setupEpisodeProgressTracking(contentId) {
-  const videos = document.querySelectorAll(".episode-video video");
+  const videos = document.querySelectorAll(
+    ".episode-video video, .episode-video-hidden video"
+  );
 
   videos.forEach(async (video) => {
     const episodeId = video.getAttribute("data-episode-id");
@@ -1271,64 +1349,133 @@ function updateProgressDisplay(episodeId, currentTime, duration) {
   );
   if (!episodeCard) return;
 
-  // Update progress bar
-  const progressBar = episodeCard.querySelector(".episode-progress-bar");
-  if (progressBar) {
-    progressBar.style.width = `${roundedPercentage}%`;
-  }
+  // Check if it's the new small format or old format
+  const isSmallFormat = episodeCard.classList.contains("episode-card-small");
 
-  // Update or create progress percentage
-  let progressInfo = episodeCard.querySelector(".episode-progress-info");
-  if (!progressInfo) {
-    // Create progress info if it doesn't exist
-    const header = episodeCard.querySelector(".episode-header");
-    if (header) {
-      progressInfo = document.createElement("div");
-      progressInfo.className = "episode-progress-info";
-      header.appendChild(progressInfo);
-    } else {
-      return;
-    }
-  }
-
-  // Update progress percentage
-  let percentageSpan = progressInfo.querySelector(".progress-percentage");
-  if (!percentageSpan) {
-    percentageSpan = document.createElement("span");
-    percentageSpan.className = "progress-percentage";
-    progressInfo.insertBefore(percentageSpan, progressInfo.firstChild);
-  }
-  percentageSpan.textContent = `${roundedPercentage}%`;
-
-  // Update or create completed badge
-  let completedBadge = progressInfo.querySelector(".completed-badge");
-  if (isCompleted && !completedBadge) {
-    completedBadge = document.createElement("span");
-    completedBadge.className = "completed-badge";
-    completedBadge.textContent = "✓ Completed";
-    progressInfo.appendChild(completedBadge);
-  } else if (!isCompleted && completedBadge) {
-    completedBadge.remove();
-  }
-
-  // Show progress bar if it doesn't exist
-  let progressBarContainer = episodeCard.querySelector(
-    ".episode-progress-bar-container"
-  );
-  if (!progressBarContainer && percentage > 0) {
-    progressBarContainer = document.createElement("div");
-    progressBarContainer.className = "episode-progress-bar-container";
-    const meta = episodeCard.querySelector(".episode-meta");
-    if (meta && meta.nextSibling) {
-      episodeCard.insertBefore(progressBarContainer, meta.nextSibling);
-    } else if (meta) {
-      meta.after(progressBarContainer);
+  if (isSmallFormat) {
+    // Update small format progress
+    const progressBar = episodeCard.querySelector(
+      ".episode-progress-bar-small"
+    );
+    if (progressBar) {
+      progressBar.style.width = `${roundedPercentage}%`;
     }
 
-    const progressBar = document.createElement("div");
-    progressBar.className = "episode-progress-bar";
-    progressBar.style.width = `${roundedPercentage}%`;
-    progressBarContainer.appendChild(progressBar);
+    // Update or create progress info
+    let progressInfo = episodeCard.querySelector(
+      ".episode-progress-info-small"
+    );
+    if (!progressInfo) {
+      const header = episodeCard.querySelector(".episode-header-small");
+      if (header) {
+        progressInfo = document.createElement("div");
+        progressInfo.className = "episode-progress-info-small";
+        header.appendChild(progressInfo);
+      } else {
+        return;
+      }
+    }
+
+    // Update progress percentage
+    let percentageSpan = progressInfo.querySelector(
+      ".progress-percentage-small"
+    );
+    if (!percentageSpan) {
+      percentageSpan = document.createElement("span");
+      percentageSpan.className = "progress-percentage-small";
+      progressInfo.insertBefore(percentageSpan, progressInfo.firstChild);
+    }
+    percentageSpan.textContent = `${roundedPercentage}%`;
+
+    // Update or create completed badge
+    let completedBadge = progressInfo.querySelector(".completed-badge-small");
+    if (isCompleted && !completedBadge) {
+      completedBadge = document.createElement("span");
+      completedBadge.className = "completed-badge-small";
+      completedBadge.textContent = "✓";
+      progressInfo.appendChild(completedBadge);
+    } else if (!isCompleted && completedBadge) {
+      completedBadge.remove();
+    }
+
+    // Show progress bar if it doesn't exist
+    let progressBarContainer = episodeCard.querySelector(
+      ".episode-progress-bar-container-small"
+    );
+    if (!progressBarContainer && percentage > 0) {
+      const meta = episodeCard.querySelector(".episode-meta-small");
+      if (meta) {
+        progressBarContainer = document.createElement("div");
+        progressBarContainer.className = "episode-progress-bar-container-small";
+        const progressBar = document.createElement("div");
+        progressBar.className = "episode-progress-bar-small";
+        progressBar.style.width = `${roundedPercentage}%`;
+        progressBarContainer.appendChild(progressBar);
+        meta.appendChild(progressBarContainer);
+      }
+    } else if (progressBarContainer) {
+      const progressBar = progressBarContainer.querySelector(
+        ".episode-progress-bar-small"
+      );
+      if (progressBar) {
+        progressBar.style.width = `${roundedPercentage}%`;
+      }
+    }
+  } else {
+    // Update old format progress (for backward compatibility)
+    const progressBar = episodeCard.querySelector(".episode-progress-bar");
+    if (progressBar) {
+      progressBar.style.width = `${roundedPercentage}%`;
+    }
+
+    let progressInfo = episodeCard.querySelector(".episode-progress-info");
+    if (!progressInfo) {
+      const header = episodeCard.querySelector(".episode-header");
+      if (header) {
+        progressInfo = document.createElement("div");
+        progressInfo.className = "episode-progress-info";
+        header.appendChild(progressInfo);
+      } else {
+        return;
+      }
+    }
+
+    let percentageSpan = progressInfo.querySelector(".progress-percentage");
+    if (!percentageSpan) {
+      percentageSpan = document.createElement("span");
+      percentageSpan.className = "progress-percentage";
+      progressInfo.insertBefore(percentageSpan, progressInfo.firstChild);
+    }
+    percentageSpan.textContent = `${roundedPercentage}%`;
+
+    let completedBadge = progressInfo.querySelector(".completed-badge");
+    if (isCompleted && !completedBadge) {
+      completedBadge = document.createElement("span");
+      completedBadge.className = "completed-badge";
+      completedBadge.textContent = "✓ Completed";
+      progressInfo.appendChild(completedBadge);
+    } else if (!isCompleted && completedBadge) {
+      completedBadge.remove();
+    }
+
+    let progressBarContainer = episodeCard.querySelector(
+      ".episode-progress-bar-container"
+    );
+    if (!progressBarContainer && percentage > 0) {
+      progressBarContainer = document.createElement("div");
+      progressBarContainer.className = "episode-progress-bar-container";
+      const meta = episodeCard.querySelector(".episode-meta");
+      if (meta && meta.nextSibling) {
+        episodeCard.insertBefore(progressBarContainer, meta.nextSibling);
+      } else if (meta) {
+        meta.after(progressBarContainer);
+      }
+
+      const progressBar = document.createElement("div");
+      progressBar.className = "episode-progress-bar";
+      progressBar.style.width = `${roundedPercentage}%`;
+      progressBarContainer.appendChild(progressBar);
+    }
   }
 }
 

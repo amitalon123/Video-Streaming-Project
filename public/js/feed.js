@@ -251,6 +251,222 @@ async function fetchLikedContent() {
   }
 }
 
+// Fetch user's liked content to extract genres for recommendations
+// Only uses LIKED content (heart icon) for genres, not watched content
+// Only excludes LIKED content from recommendations (not watched content)
+async function getUserContentForRecommendations() {
+  try {
+    const currentUser = JSON.parse(localStorage.getItem("currentUser"));
+    const currentProfile = JSON.parse(localStorage.getItem("currentProfile"));
+    if (!currentUser || !currentUser.id) {
+      return { likedGenres: [], likedContent: [], excludeIds: [] };
+    }
+
+    const profileQuery = currentProfile?.id
+      ? `&profile=${currentProfile.id}`
+      : "";
+
+    // Step 1: Get ONLY liked content (for genres extraction AND excludeIds)
+    // We only exclude liked content, not watched content
+    const likedResponse = await fetch(
+      `${API_BASE_URL}/viewings?user=${currentUser.id}${profileQuery}&liked=true&limit=1000`
+    );
+    if (!likedResponse.ok) throw new Error("Network response was not ok");
+    const likedData = await likedResponse.json();
+
+    if (!likedData.data || !Array.isArray(likedData.data)) {
+      // If no liked content, return empty (no recommendations based on likes)
+      return {
+        likedGenres: [],
+        likedContent: [],
+        excludeIds: [], // Don't exclude anything if user hasn't liked anything
+      };
+    }
+
+    // Extract ONLY liked content IDs (for genres)
+    const likedContentIds = new Set();
+    likedData.data.forEach((item) => {
+      if (item.content && item.liked === true) {
+        const contentId =
+          typeof item.content === "object" ? item.content._id : item.content;
+        likedContentIds.add(contentId.toString());
+      }
+    });
+
+    if (likedContentIds.size === 0) {
+      console.log("No liked content found for recommendations");
+      return {
+        likedGenres: [],
+        likedContent: [],
+        excludeIds: [], // Don't exclude anything if user hasn't liked anything
+      };
+    }
+
+    console.log(
+      `Found ${likedContentIds.size} LIKED content items for recommendations (genres extraction)`
+    );
+
+    // Fetch full content details to extract genres from LIKED content only
+    const contentPromises = Array.from(likedContentIds).map(
+      async (contentId) => {
+        try {
+          const contentResponse = await fetch(
+            `${API_BASE_URL}/content/${contentId}`
+          );
+          if (!contentResponse.ok) return null;
+          const contentData = await contentResponse.json();
+          return contentData.data;
+        } catch (error) {
+          console.error(`Error fetching content ${contentId}:`, error);
+          return null;
+        }
+      }
+    );
+
+    const contents = await Promise.all(contentPromises);
+    const validContents = contents.filter((content) => content !== null);
+
+    console.log(
+      `Fetched ${validContents.length} liked content items to extract genres from`
+    );
+
+    // Extract genres from LIKED content only (not from watched content)
+    const genreIds = new Set();
+    validContents.forEach((content) => {
+      if (content.genres && Array.isArray(content.genres)) {
+        content.genres.forEach((genre) => {
+          const genreId =
+            typeof genre === "object" ? genre._id || genre.id : genre;
+          if (genreId) {
+            genreIds.add(genreId.toString());
+            console.log(
+              `Added genre ${genreId} from liked content: ${content.title}`
+            );
+          }
+        });
+      } else {
+        console.warn(
+          `Content ${content.title} (${content._id}) has no genres array`
+        );
+      }
+    });
+
+    console.log(
+      `Extracted ${genreIds.size} unique genres from user's LIKED content only (not from watched content)`
+    );
+    console.log("Genre IDs:", Array.from(genreIds));
+
+    // Only exclude LIKED content from recommendations (not watched content)
+    // This way, we can recommend content with similar genres even if user has watched it (but not liked it)
+    console.log(
+      `Excluding ${likedContentIds.size} LIKED content items from recommendations (so we don't recommend content user already liked)`
+    );
+
+    return {
+      likedGenres: Array.from(genreIds), // Only genres from LIKED content
+      likedContent: Array.from(likedContentIds),
+      excludeIds: Array.from(likedContentIds), // Only exclude LIKED content, not watched content
+    };
+  } catch (error) {
+    console.error("Error fetching user content for recommendations:", error);
+    return { likedGenres: [], likedContent: [], excludeIds: [] };
+  }
+}
+
+// Fetch recommendations based on user's liked/watched content
+async function fetchRecommendations(limit = 5) {
+  try {
+    // Get user's content data (genres, liked content, exclude IDs)
+    const userData = await getUserContentForRecommendations();
+
+    console.log("=== RECOMMENDATIONS DEBUG ===");
+    console.log("User data for recommendations:", {
+      likedGenresCount: userData.likedGenres.length,
+      likedGenres: userData.likedGenres,
+      likedContentCount: userData.likedContent.length,
+      likedContent: userData.likedContent,
+      excludeIdsCount: userData.excludeIds.length,
+      excludeIds: userData.excludeIds,
+    });
+
+    // If user has no liked content (no genres), return empty array
+    // We need at least some liked genres to make recommendations
+    if (userData.likedGenres.length === 0) {
+      console.log(
+        "No liked genres found for recommendations - user needs to like content first"
+      );
+      return [];
+    }
+
+    // Call recommendations API
+    const requestBody = {
+      likedGenres: userData.likedGenres,
+      likedContent: userData.likedContent,
+      excludeIds: userData.excludeIds,
+    };
+
+    console.log("Sending request to API:", {
+      url: `${API_BASE_URL}/content/recommendations?limit=${limit}`,
+      body: requestBody,
+    });
+
+    const response = await fetch(
+      `${API_BASE_URL}/content/recommendations?limit=${limit}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(requestBody),
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("API Error:", response.status, errorText);
+      throw new Error(`Network response was not ok: ${response.status}`);
+    }
+
+    const data = await response.json();
+    console.log("API Response:", {
+      success: data.success,
+      count: data.count,
+      recommendationsCount: data.data?.length || 0,
+      recommendations: data.data?.map((item) => ({
+        id: item._id,
+        title: item.title,
+        genres: item.genres?.map((g) => (typeof g === "object" ? g.name : g)),
+        genreMatchCount: item.genreMatchCount,
+        recommendationScore: item.recommendationScore,
+      })),
+    });
+
+    // Log full response for debugging
+    console.log("Full API Response data:", data);
+
+    // If we got fewer recommendations than requested, log why
+    if (data.data && data.data.length < limit) {
+      console.warn(
+        `⚠️ Only got ${data.data.length} recommendations out of ${limit} requested. This might mean:`
+      );
+      console.warn("1. Not enough content in database with matching genres");
+      console.warn(
+        "2. All content with matching genres is already in excludeIds"
+      );
+      console.warn("3. Database has limited content");
+    }
+
+    const recommendations = data.data || [];
+    console.log(`Returning ${recommendations.length} recommendations`);
+    console.log("=== END RECOMMENDATIONS DEBUG ===");
+
+    return recommendations;
+  } catch (error) {
+    console.error("Error fetching recommendations:", error);
+    return [];
+  }
+}
+
 // Create a content card for horizontal row
 function createHorizontalCard(item) {
   const card = document.createElement("div");
@@ -345,6 +561,15 @@ function createHorizontalCard(item) {
         // Save to localStorage after successful update
         localStorage.setItem("likedContent", JSON.stringify(likedContent));
         console.log(`Updated like status for ${item.title}`);
+
+        // Refresh recommendations if we're on the home page
+        const activeCategory = document
+          .querySelector(".nav-link.active")
+          ?.getAttribute("data-category");
+        if (activeCategory === "home") {
+          console.log("Refreshing recommendations after like toggle");
+          refreshRecommendations();
+        }
       })
       .catch((error) => {
         console.error("Failed to update like status:", error);
@@ -365,7 +590,25 @@ function createHorizontalCard(item) {
   const watchButton = card.querySelector(".watch-button");
   if (watchButton && window.ViewingActions) {
     const posterEl = card.querySelector(".content-poster");
-    window.ViewingActions.attachWatchHandler(watchButton, posterEl, itemId);
+    // Pass callback to refresh recommendations after watch toggle
+    const onAfterWatchToggle = () => {
+      const activeCategory = document
+        .querySelector(".nav-link.active")
+        ?.getAttribute("data-category");
+      if (activeCategory === "home") {
+        console.log(
+          "Refreshing recommendations and continue watching after watch toggle"
+        );
+        refreshRecommendations();
+        refreshContinueWatching();
+      }
+    };
+    window.ViewingActions.attachWatchHandler(
+      watchButton,
+      posterEl,
+      itemId,
+      onAfterWatchToggle
+    );
   }
 
   return card;
@@ -378,6 +621,265 @@ function displayContentInRow(rowElement, contentArray) {
     const card = createHorizontalCard(item);
     rowElement.appendChild(card);
   });
+}
+
+// Fetch content that user is currently watching (has progress but not completed)
+async function fetchContinueWatching() {
+  try {
+    const currentUser = JSON.parse(localStorage.getItem("currentUser"));
+    const currentProfile = JSON.parse(localStorage.getItem("currentProfile"));
+    if (!currentUser || !currentUser.id) {
+      return [];
+    }
+
+    // Get viewing habits with progress but not completed
+    const profileQuery = currentProfile?.id
+      ? `&profile=${currentProfile.id}`
+      : "";
+    const response = await fetch(
+      `${API_BASE_URL}/viewings?user=${currentUser.id}${profileQuery}&limit=1000`
+    );
+    if (!response.ok) throw new Error("Network response was not ok");
+    const data = await response.json();
+
+    if (!data.data || !Array.isArray(data.data)) {
+      return [];
+    }
+
+    // Filter for content with progress but not completed
+    // Only movies (episode = null) for now, or we can include series too
+    const inProgressItems = data.data.filter((item) => {
+      const hasProgress = item.lastPositionSec && item.lastPositionSec > 0;
+      const notCompleted = !item.completed;
+      const isMovie = !item.episode; // Only movies for continue watching
+      return hasProgress && notCompleted && isMovie;
+    });
+
+    if (inProgressItems.length === 0) {
+      return [];
+    }
+
+    // Sort by lastWatchedAt (most recent first)
+    inProgressItems.sort((a, b) => {
+      const dateA = new Date(a.lastWatchedAt || 0);
+      const dateB = new Date(b.lastWatchedAt || 0);
+      return dateB - dateA;
+    });
+
+    // Fetch full content details
+    const contentPromises = inProgressItems.map(async (item) => {
+      try {
+        const contentId =
+          typeof item.content === "object" ? item.content._id : item.content;
+        const contentResponse = await fetch(
+          `${API_BASE_URL}/content/${contentId}`
+        );
+        if (!contentResponse.ok) return null;
+        const contentData = await contentResponse.json();
+
+        // Add progress info to content
+        const content = contentData.data;
+        content.progress = {
+          lastPositionSec: item.lastPositionSec,
+          durationSec: item.durationSec,
+          percentage:
+            item.durationSec > 0
+              ? Math.round((item.lastPositionSec / item.durationSec) * 100)
+              : 0,
+        };
+
+        return content;
+      } catch (error) {
+        console.error(`Error fetching content for continue watching:`, error);
+        return null;
+      }
+    });
+
+    const contents = await Promise.all(contentPromises);
+    return contents.filter((content) => content !== null);
+  } catch (error) {
+    console.error("Error fetching continue watching content:", error);
+    return [];
+  }
+}
+
+// Create a content card with progress bar for continue watching
+function createContinueWatchingCard(item) {
+  const card = document.createElement("div");
+  card.className = "content-card continue-watching-card";
+
+  // Get image URL and fix path if needed
+  let imageUrl = item.imageUrl || "/posters/placeholder.jpg";
+  if (imageUrl.startsWith("/assets/posters/")) {
+    imageUrl = imageUrl.replace("/assets/posters/", "/posters/");
+  } else if (imageUrl.startsWith("./posters/")) {
+    imageUrl = imageUrl.replace("./posters/", "/posters/");
+  }
+
+  const itemId = item._id;
+  const progress = item.progress || {};
+  const percentage = progress.percentage || 0;
+
+  // Check if the item is liked
+  const isLiked = likedContent[itemId];
+  const heartIcon = isLiked ? "❤️" : "🤍";
+
+  // Compute genre display
+  let genreDisplay = "Unknown";
+  if (item.genres && item.genres.length > 0) {
+    if (typeof item.genres[0] === "object") {
+      genreDisplay = item.genres.map((g) => g.name).join(", ");
+    } else {
+      genreDisplay = item.genres.join(", ");
+    }
+  }
+
+  card.innerHTML = `
+    <div class="content-poster">
+      <img src="${imageUrl}" alt="${
+    item.title
+  }" onerror="this.src='/Images/placeholder.jpg'">
+      <div class="continue-watching-progress-bar">
+        <div class="continue-watching-progress-fill" style="width: ${percentage}%"></div>
+      </div>
+    </div>
+    <div class="content-info">
+      <h3 class="content-title">${item.title}</h3>
+      <div class="content-metadata">
+        <span class="content-year">${item.releaseYear || "Unknown"}</span>
+        <span class="content-genre">${genreDisplay}</span>
+      </div>
+      <div class="content-stats">
+        <span class="content-rating">★ ${item.rating || "N/A"}</span>
+        <button class="like-button ${
+          isLiked ? "liked" : ""
+        }" data-id="${itemId}">
+          <span class="heart">${heartIcon}</span>
+        </button>
+      </div>
+      <div class="continue-watching-info">
+        <span class="continue-watching-percentage">${percentage}% watched</span>
+      </div>
+    </div>
+  `;
+
+  // Make the card clickable
+  card.addEventListener("click", (e) => {
+    if (e.target.closest(".like-button")) return;
+    window.location.href = `/content/${itemId}`;
+  });
+
+  // Add like button functionality
+  const likeButton = card.querySelector(".like-button");
+  likeButton.addEventListener("click", async (e) => {
+    e.stopPropagation();
+
+    const isCurrentlyLiked = likedContent[itemId];
+    const newLikedState = !isCurrentlyLiked;
+
+    // Optimistic UI update
+    if (newLikedState) {
+      likedContent[itemId] = true;
+      likeButton.classList.add("liked");
+      likeButton.querySelector(".heart").textContent = "❤️";
+    } else {
+      delete likedContent[itemId];
+      likeButton.classList.remove("liked");
+      likeButton.querySelector(".heart").textContent = "🤍";
+    }
+
+    // Update on server
+    updateLike(itemId, newLikedState)
+      .then(() => {
+        localStorage.setItem("likedContent", JSON.stringify(likedContent));
+        console.log(`Updated like status for ${item.title}`);
+      })
+      .catch((error) => {
+        console.error("Failed to update like status:", error);
+        // Revert optimistic update on error
+        if (newLikedState) {
+          delete likedContent[itemId];
+          likeButton.classList.remove("liked");
+          likeButton.querySelector(".heart").textContent = "🤍";
+        } else {
+          likedContent[itemId] = true;
+          likeButton.classList.add("liked");
+          likeButton.querySelector(".heart").textContent = "❤️";
+        }
+      });
+  });
+
+  return card;
+}
+
+// Refresh continue watching section (called after watch/progress actions)
+async function refreshContinueWatching() {
+  try {
+    const continueWatchingRow = document.getElementById("continueWatchingRow");
+    if (!continueWatchingRow) return;
+
+    // Fetch fresh continue watching content
+    const continueWatchingContent = await fetchContinueWatching();
+
+    if (continueWatchingContent.length > 0) {
+      continueWatchingRow.innerHTML = "";
+      continueWatchingContent.forEach((item) => {
+        const card = createContinueWatchingCard(item);
+        continueWatchingRow.appendChild(card);
+      });
+      // Show the section
+      const continueWatchingSection = document.getElementById(
+        "continueWatchingSection"
+      );
+      if (continueWatchingSection) {
+        continueWatchingSection.closest(".content-section").style.display =
+          "block";
+      }
+    } else {
+      // Hide the section if no content to continue watching
+      const continueWatchingSection = document.getElementById(
+        "continueWatchingSection"
+      );
+      if (continueWatchingSection) {
+        continueWatchingSection.closest(".content-section").style.display =
+          "none";
+      }
+    }
+  } catch (error) {
+    console.error("Error refreshing continue watching:", error);
+  }
+}
+
+// Refresh recommendations section (called after like/watch actions)
+async function refreshRecommendations() {
+  try {
+    const recommendedRow = document.getElementById("recommendedRow");
+    if (!recommendedRow) return;
+
+    // Show loading state
+    recommendedRow.innerHTML = `<div class="loading" style="padding: 20px; color: #aaa;">Refreshing recommendations...</div>`;
+
+    // Fetch fresh recommendations
+    const recommendedContent = await fetchRecommendations(5);
+
+    if (recommendedContent.length > 0) {
+      recommendedRow.innerHTML = "";
+      displayContentInRow(recommendedRow, recommendedContent);
+      // Show the section
+      const recommendedSection = document.getElementById("recommendedSection");
+      if (recommendedSection) {
+        recommendedSection.closest(".content-section").style.display = "block";
+      }
+    } else {
+      // Hide the section if no recommendations
+      const recommendedSection = document.getElementById("recommendedSection");
+      if (recommendedSection) {
+        recommendedSection.closest(".content-section").style.display = "none";
+      }
+    }
+  } catch (error) {
+    console.error("Error refreshing recommendations:", error);
+  }
 }
 
 // Display home page with horizontal sections
@@ -412,6 +914,60 @@ async function displayHomeSections() {
     const genreSectionsContainer = document.getElementById("genreSections");
     if (genreSectionsContainer) {
       genreSectionsContainer.innerHTML = "";
+    }
+
+    // Load Continue Watching section
+    const continueWatchingContent = await fetchContinueWatching();
+    const continueWatchingRow = document.getElementById("continueWatchingRow");
+    if (continueWatchingRow) {
+      if (continueWatchingContent.length > 0) {
+        continueWatchingRow.innerHTML = ""; // Clear existing content
+        continueWatchingContent.forEach((item) => {
+          const card = createContinueWatchingCard(item);
+          continueWatchingRow.appendChild(card);
+        });
+        // Show the section
+        const continueWatchingSection = document.getElementById(
+          "continueWatchingSection"
+        );
+        if (continueWatchingSection) {
+          continueWatchingSection.closest(".content-section").style.display =
+            "block";
+        }
+      } else {
+        // Hide the section if no content to continue watching
+        const continueWatchingSection = document.getElementById(
+          "continueWatchingSection"
+        );
+        if (continueWatchingSection) {
+          continueWatchingSection.closest(".content-section").style.display =
+            "none";
+        }
+      }
+    }
+
+    // Load Recommended for You section
+    const recommendedContent = await fetchRecommendations(5);
+    const recommendedRow = document.getElementById("recommendedRow");
+    if (recommendedRow) {
+      if (recommendedContent.length > 0) {
+        recommendedRow.innerHTML = ""; // Clear existing content
+        displayContentInRow(recommendedRow, recommendedContent);
+        // Show the section
+        const recommendedSection =
+          document.getElementById("recommendedSection");
+        if (recommendedSection) {
+          recommendedSection.closest(".content-section").style.display =
+            "block";
+        }
+      } else {
+        // Hide the section if no recommendations
+        const recommendedSection =
+          document.getElementById("recommendedSection");
+        if (recommendedSection) {
+          recommendedSection.closest(".content-section").style.display = "none";
+        }
+      }
     }
 
     // Load Popular Now section
