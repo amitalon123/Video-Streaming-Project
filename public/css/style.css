@@ -190,6 +190,38 @@ body {
   margin-left: auto;
 }
 
+.admin-add-content-btn {
+  background-color: #e50914;
+  color: white;
+  padding: 8px 16px;
+  border-radius: 4px;
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s ease;
+  border: none;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.admin-add-content-btn:hover {
+  background-color: #f40612;
+  box-shadow: 0 0 8px rgba(229, 9, 20, 0.5);
+  transform: translateY(-1px);
+}
+
+.admin-add-content-btn:active {
+  transform: translateY(0);
+  box-shadow: 0 0 4px rgba(229, 9, 20, 0.3);
+}
+
+.admin-add-content-btn i {
+  font-size: 16px;
+}
+
 .profile-menu {
   display: flex;
   align-items: center;
