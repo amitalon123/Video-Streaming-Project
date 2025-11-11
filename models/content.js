@@ -41,10 +41,6 @@ const contentSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
-    trailerUrl: {
-      type: String,
-      default: "",
-    },
     videoUrl: {
       type: String,
       default: "",

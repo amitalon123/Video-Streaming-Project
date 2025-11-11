@@ -191,6 +191,7 @@ function renumberCastMembers(formType) {
 function setupTypeChangeHandlers() {
   document.getElementById("create_type").addEventListener("change", (e) => {
     toggleDurationField("create", e.target.value);
+    showVideoUrlField("create", e.target.value);
   });
 }
 
@@ -232,6 +233,7 @@ function resetForm() {
   const typeSelect = document.getElementById("create_type");
   if (typeSelect) {
     toggleDurationField("create", typeSelect.value);
+    showVideoUrlField("create", typeSelect.value);
   }
 
   // Reset episode form fields if visible
@@ -256,6 +258,16 @@ function toggleDurationField(formType, type) {
     durationInput.value = "";
   } else {
     durationGroup.style.display = "block";
+  }
+}
+
+// show video url field if type is movie
+function showVideoUrlField(formType, type) {
+  const videoUrlField = document.getElementById(`${formType}_videoUrlGroup`);
+  if (type === "movie") {
+    videoUrlField.style.display = "block";
+  } else {
+    videoUrlField.style.display = "none";
   }
 }
 
@@ -585,7 +597,6 @@ function collectFormData(formType) {
       document.getElementById(`${formType}_releaseYear`).value
     ),
     imageUrl: document.getElementById(`${formType}_imageUrl`).value.trim(),
-    trailerUrl: document.getElementById(`${formType}_trailerUrl`).value.trim(),
     videoUrl: document.getElementById(`${formType}_videoUrl`).value.trim(),
     director: document.getElementById(`${formType}_director`).value.trim(),
   };

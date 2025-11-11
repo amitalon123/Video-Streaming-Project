@@ -348,13 +348,7 @@ function displayContentDetails(content) {
   }
 
   // Display video if available
-  let videoUrl = content.trailerUrl || "";
-
-  // נבדוק אם יש שדה videoUrl בתוכן, ללא קשר לסוג התוכן
-  if (content.videoUrl) {
-    videoUrl = content.videoUrl;
-    console.log("Found videoUrl:", videoUrl);
-  }
+  let videoUrl = content.videoUrl || "";
 
   // Fix video path if necessary
   if (videoUrl && videoUrl.startsWith("/assets/videos/")) {
