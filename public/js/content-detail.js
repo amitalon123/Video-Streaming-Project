@@ -329,12 +329,21 @@ function clearEpisodeProgress(episodeId) {
 function displayContentDetails(content) {
   const container = document.getElementById("contentDetailContainer");
 
-  // Fix image path if necessary
-  let imageUrl = content.imageUrl || "/posters/placeholder.jpg";
-  if (imageUrl.startsWith("/assets/posters/")) {
-    imageUrl = imageUrl.replace("/assets/posters/", "/posters/");
-  } else if (imageUrl.startsWith("./posters/")) {
-    imageUrl = imageUrl.replace("./posters/", "/posters/");
+  // Fix image path if necessary and ensure absolute path for relative URLs
+  let imageUrl = content.imageUrl || "/posters/nature.jpg"; // fallback to an existing placeholder
+  if (imageUrl) {
+    // Normalize Windows-style backslashes to forward slashes
+    imageUrl = imageUrl.replace(/\\/g, "/");
+    if (imageUrl.startsWith("/assets/posters/")) {
+      imageUrl = imageUrl.replace("/assets/posters/", "/posters/");
+    } else if (imageUrl.startsWith("./posters/")) {
+      imageUrl = imageUrl.replace("./posters/", "/posters/");
+    } else if (imageUrl.startsWith("posters/")) {
+      imageUrl = `/${imageUrl}`;
+    } else if (!imageUrl.startsWith("http") && !imageUrl.startsWith("/")) {
+      // generic relative path safeguard
+      imageUrl = `/${imageUrl}`;
+    }
   }
 
   // Format genres
@@ -347,14 +356,21 @@ function displayContentDetails(content) {
     }
   }
 
-  // Display video if available
+  // Display video if available; normalize common relative paths to absolute
   let videoUrl = content.videoUrl || "";
-
-  // Fix video path if necessary
-  if (videoUrl && videoUrl.startsWith("/assets/videos/")) {
-    videoUrl = videoUrl.replace("/assets/videos/", "/videos/");
-  } else if (videoUrl && videoUrl.startsWith("./videos/")) {
-    videoUrl = videoUrl.replace("./videos/", "/videos/");
+  if (videoUrl) {
+    // Normalize Windows-style backslashes to forward slashes
+    videoUrl = videoUrl.replace(/\\/g, "/");
+    if (videoUrl.startsWith("/assets/videos/")) {
+      videoUrl = videoUrl.replace("/assets/videos/", "/videos/");
+    } else if (videoUrl.startsWith("./videos/")) {
+      videoUrl = videoUrl.replace("./videos/", "/videos/");
+    } else if (videoUrl.startsWith("videos/")) {
+      videoUrl = `/${videoUrl}`;
+    } else if (!videoUrl.startsWith("http") && !videoUrl.startsWith("/")) {
+      // generic relative path safeguard
+      videoUrl = `/${videoUrl}`;
+    }
   }
 
   // עבור סרטים, נוסיף הדפסת דיבוג לראות אם יש להם videoUrl
