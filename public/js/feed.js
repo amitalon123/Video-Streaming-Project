@@ -7,6 +7,23 @@ let likedContent = {};
 // Global reference to search input (will be set in DOMContentLoaded)
 let searchInput = null;
 
+// Infinite scroll state for horizontal sections
+const infiniteScrollState = {
+  popular: { page: 1, hasMore: true, isLoading: false, hasLooped: false },
+  newReleases: { page: 1, hasMore: true, isLoading: false, hasLooped: false },
+  recommended: { page: 1, hasMore: true, isLoading: false, hasLooped: false },
+  continueWatching: {
+    page: 1,
+    hasMore: true,
+    isLoading: false,
+    hasLooped: false,
+  },
+  genres: {}, // Will store state per genre: { genreId: { page: 1, hasMore: true, isLoading: false, hasLooped: false } }
+};
+
+// Items per page for infinite scroll
+const ITEMS_PER_LOAD = 10;
+
 // API Functions - לשימוש עתידי
 async function fetchAllContent(searchTerm = "", sortBy = "") {
   try {
@@ -65,30 +82,41 @@ async function fetchMovies(searchTerm = "", sortBy = "") {
   }
 }
 
-async function fetchPopularContent() {
+async function fetchPopularContent(page = 1, limit = ITEMS_PER_LOAD) {
   try {
-    const response = await fetch(`${API_BASE_URL}/content/popular/all`);
+    // Use getAllContent with popularity sort which supports pagination
+    const response = await fetch(
+      `${API_BASE_URL}/content?sort=popularity&page=${page}&limit=${limit}`
+    );
     if (!response.ok) throw new Error("Network response was not ok");
     const data = await response.json();
-    return data.data || [];
+    return {
+      content: data.data || [],
+      hasMore: data.pagination?.hasNextPage || false,
+      total: data.pagination?.total || 0,
+    };
   } catch (error) {
     console.error("Error fetching popular content:", error);
-    return [];
+    return { content: [], hasMore: false, total: 0 };
   }
 }
 
 // Fetch newest content
-async function fetchNewestContent() {
+async function fetchNewestContent(page = 1, limit = ITEMS_PER_LOAD) {
   try {
     const response = await fetch(
-      `${API_BASE_URL}/content?sort=releaseYear:-1&limit=20`
+      `${API_BASE_URL}/content?sort=year_desc&page=${page}&limit=${limit}`
     );
     if (!response.ok) throw new Error("Network response was not ok");
     const data = await response.json();
-    return data.data || [];
+    return {
+      content: data.data || [],
+      hasMore: data.pagination?.hasNextPage || false,
+      total: data.pagination?.total || 0,
+    };
   } catch (error) {
     console.error("Error fetching newest content:", error);
-    return [];
+    return { content: [], hasMore: false, total: 0 };
   }
 }
 
@@ -106,17 +134,22 @@ async function fetchContentByGenre(genreId) {
 }
 
 // Fetch newest content by genre
-async function fetchNewestByGenre(genreId) {
+async function fetchNewestByGenre(genreId, page = 1, limit = ITEMS_PER_LOAD) {
   try {
+    // Use the genre content endpoint which supports pagination
     const response = await fetch(
-      `${API_BASE_URL}/content/newest/genre/${genreId}`
+      `${API_BASE_URL}/genres/${genreId}/content?page=${page}&limit=${limit}&sort=releaseYear:-1`
     );
     if (!response.ok) throw new Error("Network response was not ok");
     const data = await response.json();
-    return data.data || [];
+    return {
+      content: data.data || [],
+      hasMore: data.pagination?.hasNextPage || false,
+      total: data.pagination?.total || 0,
+    };
   } catch (error) {
     console.error("Error fetching newest content by genre:", error);
-    return [];
+    return { content: [], hasMore: false, total: 0 };
   }
 }
 
@@ -374,7 +407,7 @@ async function getUserContentForRecommendations() {
 }
 
 // Fetch recommendations based on user's liked/watched content
-async function fetchRecommendations(limit = 5) {
+async function fetchRecommendations(limit = 5, offset = 0) {
   try {
     // Get user's content data (genres, liked content, exclude IDs)
     const userData = await getUserContentForRecommendations();
@@ -503,7 +536,7 @@ function createHorizontalCard(item) {
     <div class="content-poster">
       <img src="${imageUrl}" alt="${
     item.title
-  }" onerror="this.src='/Images/placeholder.jpg'">
+  }" onerror="this.src='/posters/nature.jpg'">
       ${
         window.ViewingActions && window.ViewingActions.isWatched(itemId)
           ? '<span class="watched-badge">✓ Watched</span>'
@@ -615,91 +648,264 @@ function createHorizontalCard(item) {
 }
 
 // Display content in horizontal row
-function displayContentInRow(rowElement, contentArray) {
-  rowElement.innerHTML = "";
+function displayContentInRow(rowElement, contentArray, append = false) {
+  if (!append) {
+    rowElement.innerHTML = "";
+  }
   contentArray.forEach((item) => {
     const card = createHorizontalCard(item);
     rowElement.appendChild(card);
   });
 }
 
-// Fetch content that user is currently watching (has progress but not completed)
-async function fetchContinueWatching() {
-  try {
-    const currentUser = JSON.parse(localStorage.getItem("currentUser"));
-    const currentProfile = JSON.parse(localStorage.getItem("currentProfile"));
-    if (!currentUser || !currentUser.id) {
-      return [];
-    }
+// Setup infinite horizontal scroll (carousel) for a section
+// True carousel: duplicate content at the end, seamless infinite scroll
+// Only works if there are 5+ content items in the section
+function setupInfiniteHorizontalScroll(
+  scrollContainer,
+  rowElement,
+  sectionType,
+  fetchFunction,
+  fetchParams = {}
+) {
+  // Prevent duplicate listeners
+  if (scrollContainer.dataset.infiniteScrollSetup === "true") {
+    return;
+  }
 
-    // Get viewing habits with progress but not completed
-    const profileQuery = currentProfile?.id
-      ? `&profile=${currentProfile.id}`
-      : "";
-    const response = await fetch(
-      `${API_BASE_URL}/viewings?user=${currentUser.id}${profileQuery}&limit=1000`
+  // Check if there are 5+ content items (cards) in the row
+  // Count actual content cards (not loading messages or error messages)
+  // Include both regular content cards and continue-watching cards
+  const contentCards = rowElement.querySelectorAll(
+    ".content-card:not(.loading):not(.error)"
+  );
+  const contentCount = contentCards.length;
+
+  // Only setup carousel if there are 5+ content items
+  if (contentCount < 5) {
+    console.log(
+      `[${sectionType}] Only ${contentCount} items, skipping carousel (needs 5+)`
     );
-    if (!response.ok) throw new Error("Network response was not ok");
-    const data = await response.json();
+    return;
+  }
 
-    if (!data.data || !Array.isArray(data.data)) {
-      return [];
+  // Mark as setup to prevent duplicate listeners
+  scrollContainer.dataset.infiniteScrollSetup = "true";
+
+  // Wait for layout to be ready and images to load before measuring
+  let retryCount = 0;
+  const maxRetries = 20;
+
+  const setupCarousel = () => {
+    // Check if scrollContainer and rowElement exist and are visible
+    if (!scrollContainer || !rowElement) {
+      console.warn(
+        `[${sectionType}] Scroll container or row element not found`
+      );
+      return;
     }
 
-    // Filter for content with progress but not completed
-    // Only movies (episode = null) for now, or we can include series too
-    const inProgressItems = data.data.filter((item) => {
-      const hasProgress = item.lastPositionSec && item.lastPositionSec > 0;
-      const notCompleted = !item.completed;
-      const isMovie = !item.episode; // Only movies for continue watching
-      return hasProgress && notCompleted && isMovie;
-    });
+    // Store the scrollWidth of the scrollContainer (which contains the rowElement)
+    // This is the actual scrollable width
+    const originalScrollWidth = scrollContainer.scrollWidth;
+    const clientWidth = scrollContainer.clientWidth;
+    const rowWidth = rowElement.scrollWidth;
 
-    if (inProgressItems.length === 0) {
-      return [];
+    // Debug logging
+    console.log(
+      `[${sectionType}] Setup attempt ${
+        retryCount + 1
+      }: scrollWidth=${originalScrollWidth}, rowWidth=${rowWidth}, clientWidth=${clientWidth}`
+    );
+
+    if (
+      (originalScrollWidth === 0 ||
+        originalScrollWidth <= clientWidth ||
+        rowWidth === 0) &&
+      retryCount < maxRetries
+    ) {
+      // Content might not be laid out yet, try again
+      retryCount++;
+      setTimeout(setupCarousel, 150);
+      return;
     }
 
-    // Sort by lastWatchedAt (most recent first)
-    inProgressItems.sort((a, b) => {
-      const dateA = new Date(a.lastWatchedAt || 0);
-      const dateB = new Date(b.lastWatchedAt || 0);
-      return dateB - dateA;
+    if (originalScrollWidth === 0 || originalScrollWidth <= clientWidth) {
+      console.warn(
+        `[${sectionType}] Could not setup carousel after ${retryCount} retries: scrollWidth=${originalScrollWidth}, clientWidth=${clientWidth}, rowWidth=${rowWidth}`
+      );
+      return;
+    }
+
+    // Clone all content cards and append them at the end for seamless looping
+    const originalCards = Array.from(contentCards);
+    originalCards.forEach((card) => {
+      const clonedCard = card.cloneNode(true);
+      clonedCard.classList.add("carousel-duplicate");
+      rowElement.appendChild(clonedCard);
     });
 
-    // Fetch full content details
-    const contentPromises = inProgressItems.map(async (item) => {
-      try {
-        const contentId =
-          typeof item.content === "object" ? item.content._id : item.content;
-        const contentResponse = await fetch(
-          `${API_BASE_URL}/content/${contentId}`
-        );
-        if (!contentResponse.ok) return null;
-        const contentData = await contentResponse.json();
+    // Store original cards for later duplication
+    const originalCardsArray = Array.from(contentCards);
 
-        // Add progress info to content
-        const content = contentData.data;
-        content.progress = {
-          lastPositionSec: item.lastPositionSec,
-          durationSec: item.durationSec,
-          percentage:
-            item.durationSec > 0
-              ? Math.round((item.lastPositionSec / item.durationSec) * 100)
-              : 0,
-        };
+    // After cloning, calculate the original width (half of new scrollWidth)
+    // Wait a bit for layout to update after cloning
+    setTimeout(() => {
+      const newScrollWidth = scrollContainer.scrollWidth;
+      const originalWidth = newScrollWidth / 2;
 
-        return content;
-      } catch (error) {
-        console.error(`Error fetching content for continue watching:`, error);
-        return null;
+      console.log(
+        `[${sectionType}] Carousel setup complete: originalWidth=${originalWidth}, newScrollWidth=${newScrollWidth}, clientWidth=${clientWidth}`
+      );
+
+      // Infinite scroll: add more duplicates when reaching the end
+      // This allows continuous scrolling without jumping back
+      let isAddingMore = false;
+
+      const handleScroll = () => {
+        if (isAddingMore) {
+          return;
+        }
+
+        const scrollLeft = scrollContainer.scrollLeft;
+        const currentScrollWidth = scrollContainer.scrollWidth;
+        const currentClientWidth = scrollContainer.clientWidth;
+
+        // Calculate how close we are to the end (within 200px of the end)
+        const distanceFromEnd =
+          currentScrollWidth - scrollLeft - currentClientWidth;
+
+        // If we're close to the end (within 200px), add more duplicates
+        if (distanceFromEnd < 200) {
+          isAddingMore = true;
+
+          // Clone all original cards again and append them
+          originalCardsArray.forEach((card) => {
+            const clonedCard = card.cloneNode(true);
+            clonedCard.classList.add("carousel-duplicate");
+            rowElement.appendChild(clonedCard);
+          });
+
+          // Reset flag after a short delay
+          setTimeout(() => {
+            isAddingMore = false;
+          }, 100);
+        }
+      };
+
+      scrollContainer.addEventListener("scroll", handleScroll, {
+        passive: true,
+      });
+    }, 50);
+  };
+
+  // Try to setup immediately, then retry if needed
+  setupCarousel();
+}
+
+// Store all continue watching content for pagination
+let allContinueWatchingContent = [];
+
+// Fetch content that user is currently watching (has progress but not completed)
+async function fetchContinueWatching(page = 1, limit = ITEMS_PER_LOAD) {
+  try {
+    // If first page, fetch all content
+    if (page === 1) {
+      const currentUser = JSON.parse(localStorage.getItem("currentUser"));
+      const currentProfile = JSON.parse(localStorage.getItem("currentProfile"));
+      if (!currentUser || !currentUser.id) {
+        allContinueWatchingContent = [];
+        return { content: [], hasMore: false, total: 0 };
       }
-    });
 
-    const contents = await Promise.all(contentPromises);
-    return contents.filter((content) => content !== null);
+      // Get viewing habits with progress but not completed
+      const profileQuery = currentProfile?.id
+        ? `&profile=${currentProfile.id}`
+        : "";
+      const response = await fetch(
+        `${API_BASE_URL}/viewings?user=${currentUser.id}${profileQuery}&limit=1000`
+      );
+      if (!response.ok) throw new Error("Network response was not ok");
+      const data = await response.json();
+
+      if (!data.data || !Array.isArray(data.data)) {
+        allContinueWatchingContent = [];
+        return { content: [], hasMore: false, total: 0 };
+      }
+
+      // Filter for content with progress but not completed
+      // Only movies (episode = null) for now, or we can include series too
+      const inProgressItems = data.data.filter((item) => {
+        const hasProgress = item.lastPositionSec && item.lastPositionSec > 0;
+        const notCompleted = !item.completed;
+        const isMovie = !item.episode; // Only movies for continue watching
+        return hasProgress && notCompleted && isMovie;
+      });
+
+      if (inProgressItems.length === 0) {
+        allContinueWatchingContent = [];
+        return { content: [], hasMore: false, total: 0 };
+      }
+
+      // Sort by lastWatchedAt (most recent first)
+      inProgressItems.sort((a, b) => {
+        const dateA = new Date(a.lastWatchedAt || 0);
+        const dateB = new Date(b.lastWatchedAt || 0);
+        return dateB - dateA;
+      });
+
+      // Fetch full content details
+      const contentPromises = inProgressItems.map(async (item) => {
+        try {
+          const contentId =
+            typeof item.content === "object" ? item.content._id : item.content;
+          const contentResponse = await fetch(
+            `${API_BASE_URL}/content/${contentId}`
+          );
+          if (!contentResponse.ok) return null;
+          const contentData = await contentResponse.json();
+
+          // Add progress info to content
+          const content = contentData.data;
+          content.progress = {
+            lastPositionSec: item.lastPositionSec,
+            durationSec: item.durationSec,
+            percentage:
+              item.durationSec > 0
+                ? Math.round((item.lastPositionSec / item.durationSec) * 100)
+                : 0,
+          };
+
+          return content;
+        } catch (error) {
+          console.error(`Error fetching content for continue watching:`, error);
+          return null;
+        }
+      });
+
+      const contents = await Promise.all(contentPromises);
+      allContinueWatchingContent = contents.filter(
+        (content) => content !== null
+      );
+    }
+
+    // Return paginated results
+    const startIndex = (page - 1) * limit;
+    const endIndex = startIndex + limit;
+    const paginatedContent = allContinueWatchingContent.slice(
+      startIndex,
+      endIndex
+    );
+    const hasMore = endIndex < allContinueWatchingContent.length;
+
+    return {
+      content: paginatedContent,
+      hasMore: hasMore,
+      total: allContinueWatchingContent.length,
+    };
   } catch (error) {
     console.error("Error fetching continue watching content:", error);
-    return [];
+    return { content: [], hasMore: false, total: 0 };
   }
 }
 
@@ -738,7 +944,7 @@ function createContinueWatchingCard(item) {
     <div class="content-poster">
       <img src="${imageUrl}" alt="${
     item.title
-  }" onerror="this.src='/Images/placeholder.jpg'">
+  }" onerror="this.src='/posters/nature.jpg'">
       <div class="continue-watching-progress-bar">
         <div class="continue-watching-progress-fill" style="width: ${percentage}%"></div>
       </div>
@@ -818,19 +1024,41 @@ async function refreshContinueWatching() {
     const continueWatchingRow = document.getElementById("continueWatchingRow");
     if (!continueWatchingRow) return;
 
-    // Fetch fresh continue watching content
-    const continueWatchingContent = await fetchContinueWatching();
+    // Reset the cached content
+    allContinueWatchingContent = [];
 
-    if (continueWatchingContent.length > 0) {
+    // Fetch fresh continue watching content
+    const continueWatchingResult = await fetchContinueWatching(
+      1,
+      ITEMS_PER_LOAD
+    );
+
+    if (continueWatchingResult.content.length > 0) {
+      infiniteScrollState.continueWatching = {
+        page: 1,
+        hasMore: continueWatchingResult.hasMore,
+        isLoading: false,
+        hasLooped: false,
+      };
       continueWatchingRow.innerHTML = "";
-      continueWatchingContent.forEach((item) => {
+      continueWatchingResult.content.forEach((item) => {
         const card = createContinueWatchingCard(item);
         continueWatchingRow.appendChild(card);
       });
-      // Show the section
+      // Re-setup infinite scroll
       const continueWatchingSection = document.getElementById(
         "continueWatchingSection"
       );
+      if (continueWatchingSection) {
+        continueWatchingSection.dataset.infiniteScrollSetup = "false";
+        setupInfiniteHorizontalScroll(
+          continueWatchingSection,
+          continueWatchingRow,
+          "continueWatching",
+          fetchContinueWatching
+        );
+      }
+      // Show the section
       if (continueWatchingSection) {
         continueWatchingSection.closest(".content-section").style.display =
           "block";
@@ -863,18 +1091,39 @@ async function refreshRecommendations() {
     const recommendedContent = await fetchRecommendations(5);
 
     if (recommendedContent.length > 0) {
-      recommendedRow.innerHTML = "";
+      infiniteScrollState.recommended = {
+        page: 1,
+        hasMore: recommendedContent.length >= 5,
+        isLoading: false,
+        hasLooped: false,
+      };
       displayContentInRow(recommendedRow, recommendedContent);
-      // Show the section
-      const recommendedSection = document.getElementById("recommendedSection");
+      // Re-setup infinite scroll (in case it wasn't set up before)
+      const recommendedSection = document.getElementById("recommendedSection"); // This is the .horizontal-scroll element itself
       if (recommendedSection) {
-        recommendedSection.closest(".content-section").style.display = "block";
+        // Remove old listener if exists
+        recommendedSection.dataset.infiniteScrollSetup = "false";
+        setupInfiniteHorizontalScroll(
+          recommendedSection,
+          recommendedRow,
+          "recommended",
+          fetchRecommendations
+        );
+      }
+      // Show the section
+      const recommendedSectionElement =
+        document.getElementById("recommendedSection");
+      if (recommendedSectionElement) {
+        recommendedSectionElement.closest(".content-section").style.display =
+          "block";
       }
     } else {
       // Hide the section if no recommendations
-      const recommendedSection = document.getElementById("recommendedSection");
-      if (recommendedSection) {
-        recommendedSection.closest(".content-section").style.display = "none";
+      const recommendedSectionElement =
+        document.getElementById("recommendedSection");
+      if (recommendedSectionElement) {
+        recommendedSectionElement.closest(".content-section").style.display =
+          "none";
       }
     }
   } catch (error) {
@@ -923,28 +1172,44 @@ async function displayHomeSections() {
     }
 
     // Load Continue Watching section
-    const continueWatchingContent = await fetchContinueWatching();
+    const continueWatchingResult = await fetchContinueWatching(
+      1,
+      ITEMS_PER_LOAD
+    );
     const continueWatchingRow = document.getElementById("continueWatchingRow");
+    const continueWatchingSection = document.getElementById(
+      "continueWatchingSection"
+    ); // This is the .horizontal-scroll element itself
     if (continueWatchingRow) {
-      if (continueWatchingContent.length > 0) {
-        continueWatchingRow.innerHTML = ""; // Clear existing content
-        continueWatchingContent.forEach((item) => {
+      if (continueWatchingResult.content.length > 0) {
+        infiniteScrollState.continueWatching = {
+          page: 1,
+          hasMore: continueWatchingResult.hasMore,
+          isLoading: false,
+          hasLooped: false,
+        };
+        // Use displayContentInRow but with continue watching cards
+        continueWatchingRow.innerHTML = "";
+        continueWatchingResult.content.forEach((item) => {
           const card = createContinueWatchingCard(item);
           continueWatchingRow.appendChild(card);
         });
+        // Setup infinite scroll
+        if (continueWatchingSection) {
+          setupInfiniteHorizontalScroll(
+            continueWatchingSection,
+            continueWatchingRow,
+            "continueWatching",
+            fetchContinueWatching
+          );
+        }
         // Show the section
-        const continueWatchingSection = document.getElementById(
-          "continueWatchingSection"
-        );
         if (continueWatchingSection) {
           continueWatchingSection.closest(".content-section").style.display =
             "block";
         }
       } else {
         // Hide the section if no content to continue watching
-        const continueWatchingSection = document.getElementById(
-          "continueWatchingSection"
-        );
         if (continueWatchingSection) {
           continueWatchingSection.closest(".content-section").style.display =
             "none";
@@ -955,41 +1220,87 @@ async function displayHomeSections() {
     // Load Recommended for You section
     const recommendedContent = await fetchRecommendations(5);
     const recommendedRow = document.getElementById("recommendedRow");
+    const recommendedSection = document.getElementById("recommendedSection"); // This is the .horizontal-scroll element itself
     if (recommendedRow) {
       if (recommendedContent.length > 0) {
-        recommendedRow.innerHTML = ""; // Clear existing content
+        infiniteScrollState.recommended = {
+          page: 1,
+          hasMore: recommendedContent.length >= 5,
+          isLoading: false,
+          hasLooped: false,
+        };
         displayContentInRow(recommendedRow, recommendedContent);
-        // Show the section
-        const recommendedSection =
-          document.getElementById("recommendedSection");
+        // Setup infinite scroll
         if (recommendedSection) {
-          recommendedSection.closest(".content-section").style.display =
+          setupInfiniteHorizontalScroll(
+            recommendedSection,
+            recommendedRow,
+            "recommended",
+            fetchRecommendations
+          );
+        }
+        // Show the section
+        const recommendedSectionElement =
+          document.getElementById("recommendedSection");
+        if (recommendedSectionElement) {
+          recommendedSectionElement.closest(".content-section").style.display =
             "block";
         }
       } else {
         // Hide the section if no recommendations
-        const recommendedSection =
+        const recommendedSectionElement =
           document.getElementById("recommendedSection");
-        if (recommendedSection) {
-          recommendedSection.closest(".content-section").style.display = "none";
+        if (recommendedSectionElement) {
+          recommendedSectionElement.closest(".content-section").style.display =
+            "none";
         }
       }
     }
 
     // Load Popular Now section
-    const popularContent = await fetchPopularContent();
+    const popularResult = await fetchPopularContent(1, ITEMS_PER_LOAD);
     const popularRow = document.getElementById("popularRow");
-    if (popularRow && popularContent.length > 0) {
-      popularRow.innerHTML = ""; // Clear existing content
-      displayContentInRow(popularRow, popularContent);
+    const popularSection = document.getElementById("popularSection"); // This is the .horizontal-scroll element itself
+    if (popularRow && popularResult.content.length > 0) {
+      infiniteScrollState.popular = {
+        page: 1,
+        hasMore: popularResult.hasMore,
+        isLoading: false,
+        hasLooped: false,
+      };
+      displayContentInRow(popularRow, popularResult.content);
+      // Setup infinite scroll
+      if (popularSection) {
+        setupInfiniteHorizontalScroll(
+          popularSection,
+          popularRow,
+          "popular",
+          fetchPopularContent
+        );
+      }
     }
 
     // Load New Releases section
-    const newestContent = await fetchNewestContent();
+    const newestResult = await fetchNewestContent(1, ITEMS_PER_LOAD);
     const newReleasesRow = document.getElementById("newReleasesRow");
-    if (newReleasesRow && newestContent.length > 0) {
-      newReleasesRow.innerHTML = ""; // Clear existing content
-      displayContentInRow(newReleasesRow, newestContent);
+    const newReleasesSection = document.getElementById("newReleasesSection"); // This is the .horizontal-scroll element itself
+    if (newReleasesRow && newestResult.content.length > 0) {
+      infiniteScrollState.newReleases = {
+        page: 1,
+        hasMore: newestResult.hasMore,
+        isLoading: false,
+        hasLooped: false,
+      };
+      displayContentInRow(newReleasesRow, newestResult.content);
+      // Setup infinite scroll
+      if (newReleasesSection) {
+        setupInfiniteHorizontalScroll(
+          newReleasesSection,
+          newReleasesRow,
+          "newReleases",
+          fetchNewestContent
+        );
+      }
     }
 
     // Load genres and create dynamic genre sections
@@ -1050,10 +1361,14 @@ async function displayHomeSections() {
         );
 
         try {
-          const newestByGenre = await fetchNewestByGenre(genre._id);
+          const newestByGenreResult = await fetchNewestByGenre(
+            genre._id,
+            1,
+            ITEMS_PER_LOAD
+          );
           console.log(
             `Content for ${genre.name}:`,
-            newestByGenre?.length || 0,
+            newestByGenreResult?.content?.length || 0,
             "items"
           );
 
@@ -1064,7 +1379,11 @@ async function displayHomeSections() {
           const section = document.createElement("section");
           section.className = "content-section";
 
-          if (newestByGenre && newestByGenre.length > 0) {
+          if (
+            newestByGenreResult &&
+            newestByGenreResult.content &&
+            newestByGenreResult.content.length > 0
+          ) {
             section.innerHTML = `
               <div class="section-header">
                 <h2 class="section-title genre-link" data-genre-id="${genreId}" style="cursor: pointer;" title="Click to view all ${genre.name} content">
@@ -1078,7 +1397,24 @@ async function displayHomeSections() {
             `;
 
             const row = section.querySelector(".content-row");
-            displayContentInRow(row, newestByGenre);
+            const scrollContainer = section.querySelector(".horizontal-scroll");
+            // Initialize state for this genre
+            infiniteScrollState.genres[genreId] = {
+              page: 1,
+              hasMore: newestByGenreResult.hasMore,
+              isLoading: false,
+              hasLooped: false,
+            };
+            displayContentInRow(row, newestByGenreResult.content);
+            // Setup infinite scroll
+            if (scrollContainer) {
+              setupInfiniteHorizontalScroll(
+                scrollContainer,
+                row,
+                "genre",
+                fetchNewestByGenre
+              );
+            }
           } else {
             // Show genre section even if no content (so users can click to see genre page)
             section.innerHTML = `
@@ -1151,7 +1487,8 @@ async function loadInitialData() {
     const apiContent = await fetchAllContent();
     const apiTvShows = await fetchTVShows();
     const apiMovies = await fetchMovies();
-    const apiPopular = await fetchPopularContent();
+    const apiPopularResult = await fetchPopularContent(1, 20);
+    const apiPopular = apiPopularResult.content || [];
 
     // אחסון במשתנים זמניים (לא משמשים עדיין)
     window.apiData = {
@@ -1196,7 +1533,7 @@ document.addEventListener("DOMContentLoaded", async function () {
   profileName.textContent = currentProfile.name;
 
   // Fix profile image path if needed
-  let profileImageUrl = currentProfile.image || "/Images/placeholder.jpg";
+  let profileImageUrl = currentProfile.image || "/Images/User1.jpg";
   if (profileImageUrl.startsWith("./Images/")) {
     profileImageUrl = profileImageUrl.replace("./Images/", "/Images/");
   }
@@ -1371,6 +1708,17 @@ document.addEventListener("DOMContentLoaded", async function () {
             // Display search results in horizontal row (like Netflix)
             // displayContentInRow already handles card creation and event listeners
             displayContentInRow(searchResultsRow, contentToShow);
+            // Setup infinite scroll for search results
+            const searchScrollContainer =
+              searchSection.querySelector(".horizontal-scroll");
+            if (searchScrollContainer) {
+              setupInfiniteHorizontalScroll(
+                searchScrollContainer,
+                searchResultsRow,
+                "search",
+                null // No fetch function needed for search - it's already loaded
+              );
+            }
           } catch (error) {
             console.error("Error displaying search results:", error);
             const searchResultsRow =
@@ -1444,7 +1792,8 @@ document.addEventListener("DOMContentLoaded", async function () {
           contentToShow = await fetchMovies(searchTerm, "");
         } else if (category === "popular" || category === "newandpopular") {
           // שם הקטגוריה שונה בין הממשק למשתמש לבין הקוד
-          contentToShow = await fetchPopularContent();
+          const popularResult = await fetchPopularContent(1, 50);
+          contentToShow = popularResult.content || [];
         } else if (category === "mylist") {
           // Fetch liked content for My List
           contentToShow = await fetchLikedContent();
@@ -1515,7 +1864,7 @@ document.addEventListener("DOMContentLoaded", async function () {
             <div class="content-poster">
               <img src="${imageUrl}" alt="${
             item.title
-          }" onerror="this.src='/Images/placeholder.jpg'">
+          }" onerror="this.src='/posters/nature.jpg'">
               ${
                 window.ViewingActions && window.ViewingActions.isWatched(itemId)
                   ? '<span class="watched-badge">✓ Watched</span>'
