@@ -76,8 +76,8 @@ npm run seed
 ```
 
 Seeded users include:
-- Admins: `amit@gmail.com`, `asaf@gmail.com`, `reut@gmail.com`, `edith@gmail.com` (password: `123456`)
-- User: `daniel@gmail.com` (password: `123456`)
+- Admins: `amit@gmail.com`, `asaf@gmail.com`, `reut@gmail.com`, `edith@gmail.com` 
+- User: `daniel@gmail.com`
 
 ## Project Structure
 
