@@ -865,9 +865,18 @@ body {
   color: white;
 }
 
+.content-banner {
+  position: relative;
+  width: clamp(320px, 90vw, 1100px);
+  margin: 0 auto;
+  aspect-ratio: 16 / 9;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
 .content-banner img {
   width: 100%;
-  max-height: 500px;
+  height: 100%;
   object-fit: cover;
   border-radius: 8px;
 }
@@ -877,12 +886,23 @@ body {
   position: relative;
 }
 
+.content-detail .video-container {
+  width: clamp(320px, 90vw, 1100px);
+  margin: 0 auto;
+  aspect-ratio: 16 / 9;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
 .episode-video-hidden {
   position: relative;
 }
 
 .video-container video {
   width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 
 .skip-overlay {
