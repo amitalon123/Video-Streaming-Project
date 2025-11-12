@@ -112,10 +112,6 @@ body {
   border-radius: 4px;
 }
 
-
-
-
-
 .profile-item:hover .profile-avatar {
   border: 3px solid white;
 }
