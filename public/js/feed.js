@@ -810,12 +810,20 @@ let allContinueWatchingContent = [];
 
 // Fetch content that user is currently watching (has progress but not completed)
 async function fetchContinueWatching(page = 1, limit = ITEMS_PER_LOAD) {
+  console.log(
+    `[Continue Watching] fetchContinueWatching called with page=${page}, limit=${limit}`
+  );
   try {
     // If first page, fetch all content
     if (page === 1) {
       const currentUser = JSON.parse(localStorage.getItem("currentUser"));
       const currentProfile = JSON.parse(localStorage.getItem("currentProfile"));
+      console.log(
+        `[Continue Watching] User: ${currentUser?.id}, Profile: ${currentProfile?.id}`
+      );
+
       if (!currentUser || !currentUser.id) {
+        console.log(`[Continue Watching] No user found, returning empty`);
         allContinueWatchingContent = [];
         return { content: [], hasMore: false, total: 0 };
       }
@@ -824,11 +832,23 @@ async function fetchContinueWatching(page = 1, limit = ITEMS_PER_LOAD) {
       const profileQuery = currentProfile?.id
         ? `&profile=${currentProfile.id}`
         : "";
-      const response = await fetch(
-        `${API_BASE_URL}/viewings?user=${currentUser.id}${profileQuery}&limit=1000`
+      const url = `${API_BASE_URL}/viewings?user=${currentUser.id}${profileQuery}&limit=1000`;
+      console.log(`[Continue Watching] Fetching from URL: ${url}`);
+
+      const response = await fetch(url);
+      console.log(
+        `[Continue Watching] Response status: ${response.status} ${response.statusText}`
       );
-      if (!response.ok) throw new Error("Network response was not ok");
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(
+          `[Continue Watching] API error: ${response.status} - ${errorText}`
+        );
+        throw new Error("Network response was not ok");
+      }
       const data = await response.json();
+      console.log(`[Continue Watching] API response:`, data);
 
       if (!data.data || !Array.isArray(data.data)) {
         allContinueWatchingContent = [];
@@ -836,18 +856,88 @@ async function fetchContinueWatching(page = 1, limit = ITEMS_PER_LOAD) {
       }
 
       // Filter for content with progress but not completed
-      // Only movies (episode = null) for now, or we can include series too
+      // Include both movies (episode = null) and series episodes
+      console.log(
+        `[Continue Watching] Total viewings fetched: ${data.data?.length || 0}`
+      );
+
+      // Log all items first to see what we're working with
+      console.log(`[Continue Watching] All viewings data:`, data.data);
+
       const inProgressItems = data.data.filter((item) => {
+        // Skip items without content (shouldn't happen, but safety check)
+        if (!item.content) {
+          console.warn(
+            `[Continue Watching] Skipping item without content:`,
+            item
+          );
+          return false;
+        }
+
         const hasProgress = item.lastPositionSec && item.lastPositionSec > 0;
         const notCompleted = !item.completed;
-        const isMovie = !item.episode; // Only movies for continue watching
-        return hasProgress && notCompleted && isMovie;
+        const isEpisode = !!item.episode;
+        const isMovie = !item.episode;
+
+        const shouldInclude = hasProgress && notCompleted;
+
+        // Helper function to safely get content ID
+        const getContentId = () => {
+          if (!item.content) return null;
+          return typeof item.content === "object"
+            ? item.content._id
+            : item.content;
+        };
+
+        // Helper function to safely get episode ID
+        const getEpisodeId = () => {
+          if (!item.episode) return null;
+          return typeof item.episode === "object"
+            ? item.episode._id
+            : item.episode;
+        };
+
+        // Log all items to see why they're being filtered out
+        if (!shouldInclude) {
+          console.log(`[Continue Watching] Excluding item:`, {
+            contentId: getContentId(),
+            episodeId: getEpisodeId(),
+            type: isEpisode ? "episode" : "movie",
+            lastPositionSec: item.lastPositionSec,
+            durationSec: item.durationSec,
+            completed: item.completed,
+            hasProgress: hasProgress,
+            notCompleted: notCompleted,
+            reason: !hasProgress ? "no progress" : "completed",
+          });
+        } else {
+          console.log(`[Continue Watching] Including item:`, {
+            contentId: getContentId(),
+            episodeId: getEpisodeId(),
+            type: isEpisode ? "episode" : "movie",
+            lastPositionSec: item.lastPositionSec,
+            durationSec: item.durationSec,
+            completed: item.completed,
+            lastWatchedAt: item.lastWatchedAt,
+          });
+        }
+
+        return shouldInclude;
       });
 
+      console.log(
+        `[Continue Watching] Filtered in-progress items: ${inProgressItems.length}`
+      );
+
       if (inProgressItems.length === 0) {
+        console.log(`[Continue Watching] No in-progress items found`);
         allContinueWatchingContent = [];
         return { content: [], hasMore: false, total: 0 };
       }
+
+      // Group by content ID to avoid duplicates
+      // If user is watching multiple episodes from the same series, show the series once
+      const contentMap = new Map();
 
       // Sort by lastWatchedAt (most recent first)
       inProgressItems.sort((a, b) => {
@@ -856,39 +946,112 @@ async function fetchContinueWatching(page = 1, limit = ITEMS_PER_LOAD) {
         return dateB - dateA;
       });
 
-      // Fetch full content details
-      const contentPromises = inProgressItems.map(async (item) => {
-        try {
-          const contentId =
-            typeof item.content === "object" ? item.content._id : item.content;
-          const contentResponse = await fetch(
-            `${API_BASE_URL}/content/${contentId}`
+      // Process items and group by content ID
+      for (const item of inProgressItems) {
+        // Skip items without content (shouldn't happen, but safety check)
+        if (!item.content) {
+          console.warn(
+            `[Continue Watching] Skipping item without content in grouping:`,
+            item
           );
-          if (!contentResponse.ok) return null;
-          const contentData = await contentResponse.json();
-
-          // Add progress info to content
-          const content = contentData.data;
-          content.progress = {
-            lastPositionSec: item.lastPositionSec,
-            durationSec: item.durationSec,
-            percentage:
-              item.durationSec > 0
-                ? Math.round((item.lastPositionSec / item.durationSec) * 100)
-                : 0,
-          };
-
-          return content;
-        } catch (error) {
-          console.error(`Error fetching content for continue watching:`, error);
-          return null;
+          continue;
         }
-      });
+
+        const contentId =
+          typeof item.content === "object" ? item.content._id : item.content;
+
+        // If this content is already in the map, keep the one with the most recent lastWatchedAt
+        if (!contentMap.has(contentId)) {
+          contentMap.set(contentId, item);
+          console.log(
+            `[Continue Watching] Added content ${contentId} to map (episode: ${
+              item.episode ? "yes" : "no"
+            })`
+          );
+        } else {
+          const existingItem = contentMap.get(contentId);
+          const existingDate = new Date(existingItem.lastWatchedAt || 0);
+          const currentDate = new Date(item.lastWatchedAt || 0);
+          if (currentDate > existingDate) {
+            contentMap.set(contentId, item);
+            console.log(
+              `[Continue Watching] Updated content ${contentId} in map with more recent episode`
+            );
+          }
+        }
+      }
+
+      console.log(
+        `[Continue Watching] Unique content items after grouping: ${contentMap.size}`
+      );
+
+      // Fetch full content details for unique content items
+      const contentPromises = Array.from(contentMap.values()).map(
+        async (item) => {
+          try {
+            const contentId =
+              typeof item.content === "object"
+                ? item.content._id
+                : item.content;
+            const contentResponse = await fetch(
+              `${API_BASE_URL}/content/${contentId}`
+            );
+            if (!contentResponse.ok) return null;
+            const contentData = await contentResponse.json();
+
+            // Add progress info to content
+            const content = contentData.data;
+            content.progress = {
+              lastPositionSec: item.lastPositionSec,
+              durationSec: item.durationSec,
+              percentage:
+                item.durationSec > 0
+                  ? Math.round((item.lastPositionSec / item.durationSec) * 100)
+                  : 0,
+            };
+
+            // If this is an episode, mark it as a series for display
+            if (item.episode) {
+              content.isSeries = true;
+              // Store episode info for potential future use
+              content.lastWatchedEpisode = {
+                episodeId:
+                  typeof item.episode === "object"
+                    ? item.episode._id
+                    : item.episode,
+                episodeTitle:
+                  typeof item.episode === "object"
+                    ? item.episode.title
+                    : "Episode",
+              };
+            }
+
+            return content;
+          } catch (error) {
+            console.error(
+              `Error fetching content for continue watching:`,
+              error
+            );
+            return null;
+          }
+        }
+      );
 
       const contents = await Promise.all(contentPromises);
       allContinueWatchingContent = contents.filter(
         (content) => content !== null
       );
+
+      console.log(
+        `[Continue Watching] Final content items: ${allContinueWatchingContent.length}`
+      );
+      allContinueWatchingContent.forEach((content) => {
+        console.log(
+          `[Continue Watching] Content: ${content.title} (${
+            content.isSeries ? "Series" : "Movie"
+          }), Progress: ${content.progress?.percentage || 0}%`
+        );
+      });
     }
 
     // Return paginated results
@@ -1174,16 +1337,35 @@ async function displayHomeSections() {
     }
 
     // Load Continue Watching section
+    console.log(
+      `[Continue Watching] Loading Continue Watching section in displayHomeSections`
+    );
     const continueWatchingResult = await fetchContinueWatching(
       1,
       ITEMS_PER_LOAD
+    );
+    console.log(
+      `[Continue Watching] Result from fetchContinueWatching:`,
+      continueWatchingResult
     );
     const continueWatchingRow = document.getElementById("continueWatchingRow");
     const continueWatchingSection = document.getElementById(
       "continueWatchingSection"
     ); // This is the .horizontal-scroll element itself
+    console.log(
+      `[Continue Watching] Row element:`,
+      continueWatchingRow,
+      `Section element:`,
+      continueWatchingSection
+    );
     if (continueWatchingRow) {
+      console.log(
+        `[Continue Watching] Found continueWatchingRow, content length: ${continueWatchingResult.content.length}`
+      );
       if (continueWatchingResult.content.length > 0) {
+        console.log(
+          `[Continue Watching] Displaying ${continueWatchingResult.content.length} items`
+        );
         infiniteScrollState.continueWatching = {
           page: 1,
           hasMore: continueWatchingResult.hasMore,
@@ -1873,25 +2055,25 @@ document.addEventListener("DOMContentLoaded", async function () {
                   : ""
               }
             </div>
-            <div class="content-info">
-              <h3 class="content-title">${item.title}</h3>
-              <div class="content-metadata">
+                    <div class="content-info">
+                        <h3 class="content-title">${item.title}</h3>
+                        <div class="content-metadata">
                 <span class="content-year">${item.releaseYear}</span>
                 <span class="content-genre">${genreDisplay}</span>
-              </div>
+                        </div>
               <div class="content-stats">
                 <span class="content-rating">★ ${item.rating || "N/A"}</span>
-                <button class="like-button ${
-                  isLiked ? "liked" : ""
-                }" data-id="${itemId}">
-                  <span class="heart">${heartIcon}</span>
-                </button>
+                        <button class="like-button ${
+                          isLiked ? "liked" : ""
+                        }" data-id="${itemId}">
+                            <span class="heart">${heartIcon}</span>
+                        </button>
               </div>
               <div class="content-actions">
                 ${watchBtnHtml}
               </div>
-            </div>
-          `;
+                    </div>
+                `;
 
           // Make the card clickable to view content details
           card.addEventListener("click", (e) => {
