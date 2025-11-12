@@ -877,8 +877,73 @@ body {
   position: relative;
 }
 
+.episode-video-hidden {
+  position: relative;
+}
+
 .video-container video {
   width: 100%;
+}
+
+.skip-overlay {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 48px;
+  display: flex;
+  gap: 10px;
+  z-index: 6;
+  pointer-events: none; /* default hidden/non-interactive */
+  opacity: 0; /* hidden by default */
+  transition: opacity 0.2s ease;
+}
+
+.skip-overlay .skip-btn {
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background-color: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  backdrop-filter: blur(2px);
+}
+
+.skip-overlay .skip-btn:hover {
+  background-color: rgba(0, 0, 0, 0.75);
+  border-color: rgba(255, 255, 255, 0.4);
+  transform: translateY(-1px);
+}
+
+.skip-overlay .skip-btn i {
+  font-size: 1.1rem;
+}
+
+.skip-overlay .skip-btn span {
+  line-height: 1;
+}
+
+/* Show skip overlay only on hover over the video containers */
+.video-container:hover .skip-overlay,
+.episode-video-hidden:hover .skip-overlay,
+.episode-video:hover .skip-overlay {
+  opacity: 1;
+  pointer-events: auto; /* enable clicks when visible */
+}
+
+@media (max-width: 575.98px) {
+  .skip-overlay .skip-btn {
+    height: 36px;
+    padding: 0 12px;
+    font-size: 0.85rem;
+  }
 }
 
 .replay-overlay {
