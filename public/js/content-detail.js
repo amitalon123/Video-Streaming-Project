@@ -256,6 +256,145 @@ async function saveVideoProgressToDB(
   }
 }
 
+// Attach keyboard skip controls to a video element (ArrowLeft/ArrowRight = 10s)
+function attachSkipControls(video, options = {}) {
+  try {
+    if (!video || video.dataset?.skipControlsAttached === "true") {
+      return;
+    }
+
+    const skipSeconds =
+      typeof options.skipSeconds === "number" ? options.skipSeconds : 10;
+
+    // Make sure the video can receive keyboard focus
+    if (!video.hasAttribute("tabindex")) {
+      video.setAttribute("tabindex", "0");
+    }
+
+    const onKeyDown = (e) => {
+      if (!video) return;
+      if (video.paused && (e.key === "ArrowLeft" || e.key === "ArrowRight")) {
+        // Allow skipping even when paused
+      }
+      if (e.key === "ArrowRight") {
+        const target = Math.min(
+          isFinite(video.duration) ? video.duration : Number.MAX_SAFE_INTEGER,
+          video.currentTime + skipSeconds
+        );
+        video.currentTime = target;
+        e.preventDefault();
+      } else if (e.key === "ArrowLeft") {
+        const target = Math.max(0, video.currentTime - skipSeconds);
+        video.currentTime = target;
+        e.preventDefault();
+      }
+    };
+
+    video.addEventListener("keydown", onKeyDown);
+
+    // Touch double-tap to skip (works in native fullscreen)
+    let lastTapTime = 0;
+    let lastTapX = 0;
+    const doubleTapThresholdMs = 300;
+    video.addEventListener(
+      "touchend",
+      (e) => {
+        try {
+          const now = Date.now();
+          const touch = e.changedTouches && e.changedTouches[0];
+          if (!touch) return;
+          const x = touch.clientX;
+          const rect = video.getBoundingClientRect();
+          const isDoubleTap = now - lastTapTime < doubleTapThresholdMs;
+          const isLeftHalf = x - rect.left < rect.width / 2;
+          if (isDoubleTap) {
+            if (isLeftHalf) {
+              video.currentTime = Math.max(0, video.currentTime - skipSeconds);
+            } else {
+              const duration = isFinite(video.duration)
+                ? video.duration
+                : Number.MAX_SAFE_INTEGER;
+              video.currentTime = Math.min(
+                duration,
+                video.currentTime + skipSeconds
+              );
+            }
+            e.preventDefault();
+          }
+          lastTapTime = now;
+          lastTapX = x;
+        } catch {
+          // ignore
+        }
+      },
+      { passive: false }
+    );
+
+    // Mark to avoid double-binding
+    video.dataset.skipControlsAttached = "true";
+  } catch (error) {
+    console.error("Failed to attach skip controls:", error);
+  }
+}
+
+// Inject visible skip buttons (back/forward by N seconds) near a video element
+function injectSkipButtons(video, options = {}) {
+  try {
+    if (!video || video.dataset?.skipButtonsAttached === "true") {
+      return;
+    }
+
+    const skipSeconds =
+      typeof options.skipSeconds === "number" ? options.skipSeconds : 10;
+
+    // Determine overlay parent (prefer known containers that are positioned)
+    const parent =
+      video.closest(".video-container") ||
+      video.closest(".episode-video") ||
+      video.parentElement ||
+      document.body;
+
+    // Create overlay container
+    const overlay = document.createElement("div");
+    overlay.className = "skip-overlay";
+
+    const backBtn = document.createElement("button");
+    backBtn.type = "button";
+    backBtn.className = "skip-btn skip-back";
+    backBtn.setAttribute("aria-label", `Skip back ${skipSeconds} seconds`);
+    backBtn.innerHTML = `<i class="bi bi-skip-backward-fill"></i><span>${skipSeconds}s</span>`;
+
+    const fwdBtn = document.createElement("button");
+    fwdBtn.type = "button";
+    fwdBtn.className = "skip-btn skip-forward";
+    fwdBtn.setAttribute("aria-label", `Skip forward ${skipSeconds} seconds`);
+    fwdBtn.innerHTML = `<span>${skipSeconds}s</span><i class="bi bi-skip-forward-fill"></i>`;
+
+    backBtn.addEventListener("click", () => {
+      if (!video) return;
+      const target = Math.max(0, (video.currentTime || 0) - skipSeconds);
+      video.currentTime = target;
+    });
+    fwdBtn.addEventListener("click", () => {
+      if (!video) return;
+      const duration = isFinite(video.duration) ? video.duration : Number.MAX_SAFE_INTEGER;
+      const target = Math.min(duration, (video.currentTime || 0) + skipSeconds);
+      video.currentTime = target;
+    });
+
+    overlay.appendChild(backBtn);
+    overlay.appendChild(fwdBtn);
+
+    // Insert overlay inside the parent container
+    parent.appendChild(overlay);
+
+    // Mark to avoid duplicates
+    video.dataset.skipButtonsAttached = "true";
+  } catch (error) {
+    console.error("Failed to inject skip buttons:", error);
+  }
+}
+
 // Format runtime
 function formatRuntime(minutes) {
   if (!minutes) return "Unknown duration";
@@ -554,6 +693,11 @@ async function setupMovieProgressTracking(contentId) {
   console.log(
     `Video element found for movie ${contentId}, readyState: ${video.readyState}`
   );
+
+  // Attach keyboard skip controls
+  attachSkipControls(video);
+  // Add visible skip buttons below the video
+  injectSkipButtons(video);
 
   // Load saved progress from database
   const savedProgress = await loadVideoProgressFromDB(contentId, null);
@@ -987,6 +1131,11 @@ async function displaySeasonEpisodes(episodes, seriesTitle, contentId) {
         video.innerHTML = `<source src="${videoUrl}" type="video/mp4">Your browser does not support the video tag.`;
         videoContainer.appendChild(video);
 
+        // Attach keyboard skip controls
+        attachSkipControls(video);
+        // Add visible skip buttons below the episode video
+        injectSkipButtons(video);
+
         // Set up progress tracking for this video
         setupVideoProgressTracking(video, contentId, episodeId);
 
@@ -1023,6 +1172,11 @@ async function setupEpisodeProgressTracking(contentId) {
   videos.forEach(async (video) => {
     const episodeId = video.getAttribute("data-episode-id");
     if (!episodeId) return;
+
+    // Attach keyboard skip controls for each episode video
+    attachSkipControls(video);
+    // Add visible skip buttons for each episode video
+    injectSkipButtons(video);
 
     // Load saved progress from database
     const savedProgress = await loadVideoProgressFromDB(contentId, episodeId);
