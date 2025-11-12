@@ -375,7 +375,9 @@ function injectSkipButtons(video, options = {}) {
     });
     fwdBtn.addEventListener("click", () => {
       if (!video) return;
-      const duration = isFinite(video.duration) ? video.duration : Number.MAX_SAFE_INTEGER;
+      const duration = isFinite(video.duration)
+        ? video.duration
+        : Number.MAX_SAFE_INTEGER;
       const target = Math.min(duration, (video.currentTime || 0) + skipSeconds);
       video.currentTime = target;
     });
@@ -915,9 +917,15 @@ async function setupMovieProgressTracking(contentId) {
   });
 }
 
+// Store all episodes globally to find next episode
+let allEpisodes = [];
+
 // Display episodes for series
 async function displayEpisodes(episodes, seriesTitle) {
   if (!episodes || episodes.length === 0) return;
+
+  // Store episodes globally for next episode functionality
+  allEpisodes = episodes;
 
   const container = document.getElementById("episodesContainer");
   container.style.display = "block";
@@ -1135,7 +1143,12 @@ async function displaySeasonEpisodes(episodes, seriesTitle, contentId) {
         injectSkipButtons(video);
 
         // Set up progress tracking for this video
-        setupVideoProgressTracking(video, contentId, episodeId);
+        // Use setupEpisodeProgressTracking which handles individual videos
+        // Note: setupEpisodeProgressTracking processes all videos, but we'll call it
+        // after adding the video to ensure it's tracked
+        setTimeout(() => {
+          setupEpisodeProgressTracking(contentId);
+        }, 100);
 
         // Show and play video
         videoContainer.classList.add("show");
@@ -1323,9 +1336,11 @@ async function setupEpisodeProgressTracking(contentId) {
 
     // Hide replay button when video starts playing again
     video.addEventListener("play", () => {
-      const replayOverlay = video
-        .closest(".episode-video")
-        ?.querySelector(".replay-overlay");
+      const replayOverlay =
+        video.closest(".episode-video")?.querySelector(".replay-overlay") ||
+        video
+          .closest(".episode-video-hidden")
+          ?.querySelector(".replay-overlay");
       if (replayOverlay) {
         replayOverlay.style.display = "none";
       }
@@ -1389,11 +1404,99 @@ async function setupEpisodeProgressTracking(contentId) {
   });
 }
 
+// Find next episode based on current episode
+function findNextEpisode(currentEpisodeId) {
+  if (!allEpisodes || allEpisodes.length === 0) return null;
+
+  // Find current episode
+  const currentEpisode = allEpisodes.find(
+    (ep) => (ep._id || ep.id) === currentEpisodeId
+  );
+  if (!currentEpisode) return null;
+
+  const currentSeason = currentEpisode.seasonNumber;
+  const currentEpisodeNum = currentEpisode.episodeNumber;
+
+  // Sort episodes by season and episode number
+  const sortedEpisodes = [...allEpisodes].sort((a, b) => {
+    if (a.seasonNumber !== b.seasonNumber) {
+      return a.seasonNumber - b.seasonNumber;
+    }
+    return a.episodeNumber - b.episodeNumber;
+  });
+
+  // Find current episode index
+  const currentIndex = sortedEpisodes.findIndex(
+    (ep) => (ep._id || ep.id) === currentEpisodeId
+  );
+
+  // Return next episode if exists
+  if (currentIndex >= 0 && currentIndex < sortedEpisodes.length - 1) {
+    return sortedEpisodes[currentIndex + 1];
+  }
+
+  return null;
+}
+
+// Play next episode
+async function playNextEpisode(nextEpisode, contentId) {
+  if (!nextEpisode) {
+    console.log("No next episode found");
+    return;
+  }
+
+  const nextEpisodeId = nextEpisode._id || nextEpisode.id;
+  console.log("Playing next episode:", nextEpisode);
+
+  // Find the play button for the next episode
+  const nextEpisodeCard = document.querySelector(
+    `[data-episode-id="${nextEpisodeId}"]`
+  );
+  if (!nextEpisodeCard) {
+    console.error("Next episode card not found");
+    return;
+  }
+
+  // Hide current video overlay
+  const currentVideoContainer =
+    document.querySelector(".episode-video-hidden.show") ||
+    document.querySelector(".episode-video.show");
+  if (currentVideoContainer) {
+    currentVideoContainer.classList.remove("show");
+    const currentVideo = currentVideoContainer.querySelector("video");
+    if (currentVideo) {
+      currentVideo.pause();
+    }
+  }
+
+  // Hide replay overlay if exists
+  const replayOverlay = document.querySelector(".replay-overlay");
+  if (replayOverlay) {
+    replayOverlay.style.display = "none";
+  }
+
+  // Find or click the play button for next episode
+  const playButton = nextEpisodeCard.querySelector(".episode-play-button");
+  if (playButton) {
+    // Scroll to next episode card
+    nextEpisodeCard.scrollIntoView({ behavior: "smooth", block: "center" });
+
+    // Click the play button after a short delay
+    setTimeout(() => {
+      playButton.click();
+    }, 300);
+  } else {
+    console.error("Play button not found for next episode");
+  }
+}
+
 // Show replay button when video ends
 function showReplayButton(video, contentId, episodeId) {
   // Find the video container
   const videoContainer =
-    video.closest(".video-container") || video.closest(".episode-video");
+    video.closest(".video-container") ||
+    video.closest(".episode-video") ||
+    video.closest(".episode-video-hidden");
   if (!videoContainer) {
     console.error("Video container not found");
     return;
@@ -1402,28 +1505,72 @@ function showReplayButton(video, contentId, episodeId) {
   // Check if replay overlay already exists
   let replayOverlay = videoContainer.querySelector(".replay-overlay");
 
+  // Find next episode if this is a series episode
+  const nextEpisode = episodeId ? findNextEpisode(episodeId) : null;
+
   if (!replayOverlay) {
     // Create replay overlay
     replayOverlay = document.createElement("div");
     replayOverlay.className = "replay-overlay";
-    replayOverlay.innerHTML = `
-      <button class="replay-button" title="Watch Again">
-        <i class="bi bi-arrow-repeat"></i>
-        <span>Watch Again</span>
-      </button>
-    `;
+
+    // If there's a next episode, show both buttons
+    if (nextEpisode) {
+      replayOverlay.innerHTML = `
+        <button class="next-episode-button" title="Next Episode">
+          <i class="bi bi-skip-forward-fill"></i>
+          <span>Next Episode</span>
+        </button>
+        <button class="replay-button" title="Watch Again">
+          <i class="bi bi-arrow-repeat"></i>
+          <span>Watch Again</span>
+        </button>
+      `;
+    } else {
+      // Only show replay button for movies or last episode
+      replayOverlay.innerHTML = `
+        <button class="replay-button" title="Watch Again">
+          <i class="bi bi-arrow-repeat"></i>
+          <span>Watch Again</span>
+        </button>
+      `;
+    }
     videoContainer.appendChild(replayOverlay);
+  } else {
+    // Update existing overlay if needed
+    if (nextEpisode && !replayOverlay.querySelector(".next-episode-button")) {
+      const replayButton = replayOverlay.querySelector(".replay-button");
+      if (replayButton) {
+        const nextButton = document.createElement("button");
+        nextButton.className = "next-episode-button";
+        nextButton.title = "Next Episode";
+        nextButton.innerHTML = `
+          <i class="bi bi-skip-forward-fill"></i>
+          <span>Next Episode</span>
+        `;
+        replayOverlay.insertBefore(nextButton, replayButton);
+      }
+    } else if (
+      !nextEpisode &&
+      replayOverlay.querySelector(".next-episode-button")
+    ) {
+      // Remove next episode button if no next episode
+      const nextButton = replayOverlay.querySelector(".next-episode-button");
+      if (nextButton) {
+        nextButton.remove();
+      }
+    }
   }
 
-  // Always set up click handler (even if overlay already exists)
+  // Set up click handlers
   const replayButton = replayOverlay.querySelector(".replay-button");
+  const nextEpisodeButton = replayOverlay.querySelector(".next-episode-button");
 
   if (replayButton) {
     // Remove existing listeners to avoid duplicates by cloning the button
     const newReplayButton = replayButton.cloneNode(true);
     replayButton.parentNode.replaceChild(newReplayButton, replayButton);
 
-    // Add click handler - find video element dynamically when clicked
+    // Add click handler
     newReplayButton.addEventListener("click", (e) => {
       e.preventDefault();
       e.stopPropagation();
@@ -1436,6 +1583,24 @@ function showReplayButton(video, contentId, episodeId) {
       } else {
         console.error("Video element not found in container");
       }
+    });
+  }
+
+  if (nextEpisodeButton && nextEpisode) {
+    // Remove existing listeners to avoid duplicates by cloning the button
+    const newNextButton = nextEpisodeButton.cloneNode(true);
+    nextEpisodeButton.parentNode.replaceChild(newNextButton, nextEpisodeButton);
+
+    // Add click handler
+    newNextButton.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      console.log("Next episode button clicked", {
+        contentId,
+        episodeId,
+        nextEpisode,
+      });
+      playNextEpisode(nextEpisode, contentId);
     });
   }
 

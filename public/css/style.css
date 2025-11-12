@@ -955,12 +955,14 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 20px;
   background-color: rgba(0, 0, 0, 0.7);
   z-index: 10;
   pointer-events: none;
 }
 
-.replay-button {
+.replay-button,
+.next-episode-button {
   pointer-events: auto !important;
   background-color: rgba(255, 255, 255, 0.9);
   border: none;
@@ -978,30 +980,47 @@ body {
   position: relative;
 }
 
-.replay-button:hover {
+.replay-button:hover,
+.next-episode-button:hover {
   background-color: rgba(255, 255, 255, 1);
   transform: scale(1.1);
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.7);
 }
 
-.replay-button i {
+.replay-button i,
+.next-episode-button i {
   font-size: 2rem;
   color: #000;
   margin-bottom: 5px;
 }
 
-.replay-button span {
+.replay-button span,
+.next-episode-button span {
   font-size: 0.7rem;
   color: #000;
   font-weight: bold;
   text-transform: uppercase;
 }
 
+.next-episode-button {
+  background-color: rgba(229, 9, 20, 0.9);
+}
+
+.next-episode-button:hover {
+  background-color: rgba(229, 9, 20, 1);
+}
+
+.next-episode-button i,
+.next-episode-button span {
+  color: #fff;
+}
+
 .episode-video {
   position: relative;
 }
 
-.episode-video .replay-overlay {
+.episode-video .replay-overlay,
+.episode-video-hidden .replay-overlay {
   position: absolute;
   top: 0;
   left: 0;
@@ -1010,6 +1029,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 20px;
   background-color: rgba(0, 0, 0, 0.7);
   z-index: 10;
   pointer-events: none;
