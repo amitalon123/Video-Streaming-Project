@@ -982,7 +982,8 @@ body {
 }
 
 .replay-button,
-.next-episode-button {
+.next-episode-button,
+.watch-from-start-button {
   pointer-events: auto !important;
   background-color: rgba(255, 255, 255, 0.9);
   border: none;
@@ -1001,21 +1002,24 @@ body {
 }
 
 .replay-button:hover,
-.next-episode-button:hover {
+.next-episode-button:hover,
+.watch-from-start-button:hover {
   background-color: rgba(255, 255, 255, 1);
   transform: scale(1.1);
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.7);
 }
 
 .replay-button i,
-.next-episode-button i {
+.next-episode-button i,
+.watch-from-start-button i {
   font-size: 2rem;
   color: #000;
   margin-bottom: 5px;
 }
 
 .replay-button span,
-.next-episode-button span {
+.next-episode-button span,
+.watch-from-start-button span {
   font-size: 0.7rem;
   color: #000;
   font-weight: bold;
@@ -1032,6 +1036,19 @@ body {
 
 .next-episode-button i,
 .next-episode-button span {
+  color: #fff;
+}
+
+.watch-from-start-button {
+  background-color: rgba(0, 123, 255, 0.9);
+}
+
+.watch-from-start-button:hover {
+  background-color: rgba(0, 123, 255, 1);
+}
+
+.watch-from-start-button i,
+.watch-from-start-button span {
   color: #fff;
 }
 
