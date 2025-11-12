@@ -1438,6 +1438,43 @@ function findNextEpisode(currentEpisodeId) {
   return null;
 }
 
+// Find first episode of the series
+function findFirstEpisode() {
+  if (!allEpisodes || allEpisodes.length === 0) return null;
+
+  // Sort episodes by season and episode number
+  const sortedEpisodes = [...allEpisodes].sort((a, b) => {
+    if (a.seasonNumber !== b.seasonNumber) {
+      return a.seasonNumber - b.seasonNumber;
+    }
+    return a.episodeNumber - b.episodeNumber;
+  });
+
+  // Return first episode
+  return sortedEpisodes.length > 0 ? sortedEpisodes[0] : null;
+}
+
+// Check if current episode is the last episode
+function isLastEpisode(currentEpisodeId) {
+  if (!allEpisodes || allEpisodes.length === 0) return false;
+
+  // Sort episodes by season and episode number
+  const sortedEpisodes = [...allEpisodes].sort((a, b) => {
+    if (a.seasonNumber !== b.seasonNumber) {
+      return a.seasonNumber - b.seasonNumber;
+    }
+    return a.episodeNumber - b.episodeNumber;
+  });
+
+  // Find current episode index
+  const currentIndex = sortedEpisodes.findIndex(
+    (ep) => (ep._id || ep.id) === currentEpisodeId
+  );
+
+  // Check if it's the last episode
+  return currentIndex === sortedEpisodes.length - 1;
+}
+
 // Play next episode
 async function playNextEpisode(nextEpisode, contentId) {
   if (!nextEpisode) {
@@ -1446,16 +1483,8 @@ async function playNextEpisode(nextEpisode, contentId) {
   }
 
   const nextEpisodeId = nextEpisode._id || nextEpisode.id;
+  const nextEpisodeSeason = nextEpisode.seasonNumber;
   console.log("Playing next episode:", nextEpisode);
-
-  // Find the play button for the next episode
-  const nextEpisodeCard = document.querySelector(
-    `[data-episode-id="${nextEpisodeId}"]`
-  );
-  if (!nextEpisodeCard) {
-    console.error("Next episode card not found");
-    return;
-  }
 
   // Hide current video overlay
   const currentVideoContainer =
@@ -1475,6 +1504,45 @@ async function playNextEpisode(nextEpisode, contentId) {
     replayOverlay.style.display = "none";
   }
 
+  // Check if we need to switch to the season of the next episode
+  const currentActiveTab = document.querySelector(".season-tab.active");
+  const currentSeason = currentActiveTab
+    ? parseInt(currentActiveTab.dataset.season)
+    : null;
+
+  // If the next episode is in a different season, switch to that season first
+  if (currentSeason !== nextEpisodeSeason) {
+    const targetSeasonTab = document.querySelector(
+      `.season-tab[data-season="${nextEpisodeSeason}"]`
+    );
+    if (targetSeasonTab) {
+      console.log(`Switching to season ${nextEpisodeSeason} for next episode`);
+      // Click the season tab to switch seasons
+      targetSeasonTab.click();
+
+      // Wait for the season to load before trying to find the episode card
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+  }
+
+  // Find the play button for the next episode
+  let nextEpisodeCard = document.querySelector(
+    `[data-episode-id="${nextEpisodeId}"]`
+  );
+
+  // If still not found, wait a bit more for the DOM to update
+  if (!nextEpisodeCard) {
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    nextEpisodeCard = document.querySelector(
+      `[data-episode-id="${nextEpisodeId}"]`
+    );
+  }
+
+  if (!nextEpisodeCard) {
+    console.error("Next episode card not found");
+    return;
+  }
+
   // Find or click the play button for next episode
   const playButton = nextEpisodeCard.querySelector(".episode-play-button");
   if (playButton) {
@@ -1487,6 +1555,91 @@ async function playNextEpisode(nextEpisode, contentId) {
     }, 300);
   } else {
     console.error("Play button not found for next episode");
+  }
+}
+
+// Play first episode of the series
+async function playFirstEpisode(firstEpisode, contentId) {
+  if (!firstEpisode) {
+    console.log("No first episode found");
+    return;
+  }
+
+  const firstEpisodeId = firstEpisode._id || firstEpisode.id;
+  const firstEpisodeSeason = firstEpisode.seasonNumber;
+  console.log("Playing first episode:", firstEpisode);
+
+  // Hide current video overlay
+  const currentVideoContainer =
+    document.querySelector(".episode-video-hidden.show") ||
+    document.querySelector(".episode-video.show");
+  if (currentVideoContainer) {
+    currentVideoContainer.classList.remove("show");
+    const currentVideo = currentVideoContainer.querySelector("video");
+    if (currentVideo) {
+      currentVideo.pause();
+    }
+  }
+
+  // Hide replay overlay if exists
+  const replayOverlay = document.querySelector(".replay-overlay");
+  if (replayOverlay) {
+    replayOverlay.style.display = "none";
+  }
+
+  // Check if we need to switch to the season of the first episode
+  const currentActiveTab = document.querySelector(".season-tab.active");
+  const currentSeason = currentActiveTab
+    ? parseInt(currentActiveTab.dataset.season)
+    : null;
+
+  // If the first episode is in a different season, switch to that season first
+  if (currentSeason !== firstEpisodeSeason) {
+    const targetSeasonTab = document.querySelector(
+      `.season-tab[data-season="${firstEpisodeSeason}"]`
+    );
+    if (targetSeasonTab) {
+      console.log(
+        `Switching to season ${firstEpisodeSeason} for first episode`
+      );
+      // Click the season tab to switch seasons
+      targetSeasonTab.click();
+
+      // Wait for the season to load before trying to find the episode card
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+  }
+
+  // Find the play button for the first episode
+  let firstEpisodeCard = document.querySelector(
+    `[data-episode-id="${firstEpisodeId}"]`
+  );
+
+  // If still not found, wait a bit more for the DOM to update
+  if (!firstEpisodeCard) {
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    firstEpisodeCard = document.querySelector(
+      `[data-episode-id="${firstEpisodeId}"]`
+    );
+  }
+
+  if (!firstEpisodeCard) {
+    console.error("First episode card not found");
+    return;
+  }
+
+  // Find or click the play button for first episode
+  const playButton = firstEpisodeCard.querySelector(".episode-play-button");
+  if (playButton) {
+    // Scroll to first episode card
+    firstEpisodeCard.scrollIntoView({ behavior: "smooth", block: "center" });
+
+    // Click the play button after a short delay
+    setTimeout(() => {
+      playButton.click();
+    }, 300);
+  } else {
+    console.error("Play button not found for first episode");
   }
 }
 
@@ -1508,62 +1661,93 @@ function showReplayButton(video, contentId, episodeId) {
   // Find next episode if this is a series episode
   const nextEpisode = episodeId ? findNextEpisode(episodeId) : null;
 
+  // Check if this is the last episode of a series
+  const isLast = episodeId ? isLastEpisode(episodeId) : false;
+  const firstEpisode = episodeId && isLast ? findFirstEpisode() : null;
+
   if (!replayOverlay) {
     // Create replay overlay
     replayOverlay = document.createElement("div");
     replayOverlay.className = "replay-overlay";
 
-    // If there's a next episode, show both buttons
+    // Build buttons based on context
+    let buttonsHTML = "";
+
+    // If there's a next episode, show "Next Episode" button
     if (nextEpisode) {
-      replayOverlay.innerHTML = `
+      buttonsHTML += `
         <button class="next-episode-button" title="Next Episode">
           <i class="bi bi-skip-forward-fill"></i>
           <span>Next Episode</span>
         </button>
-        <button class="replay-button" title="Watch Again">
-          <i class="bi bi-arrow-repeat"></i>
-          <span>Watch Again</span>
-        </button>
       `;
-    } else {
-      // Only show replay button for movies or last episode
-      replayOverlay.innerHTML = `
-        <button class="replay-button" title="Watch Again">
-          <i class="bi bi-arrow-repeat"></i>
-          <span>Watch Again</span>
+    }
+
+    // If this is the last episode of a series, show "Watch from Start" button
+    if (isLast && firstEpisode) {
+      buttonsHTML += `
+        <button class="watch-from-start-button" title="Watch from Start">
+          <i class="bi bi-arrow-counterclockwise"></i>
+          <span>Watch from Start</span>
         </button>
       `;
     }
+
+    // Always show "Watch Again" button
+    buttonsHTML += `
+      <button class="replay-button" title="Watch Again">
+        <i class="bi bi-arrow-repeat"></i>
+        <span>Watch Again</span>
+      </button>
+    `;
+
+    replayOverlay.innerHTML = buttonsHTML;
     videoContainer.appendChild(replayOverlay);
   } else {
     // Update existing overlay if needed
-    if (nextEpisode && !replayOverlay.querySelector(".next-episode-button")) {
-      const replayButton = replayOverlay.querySelector(".replay-button");
-      if (replayButton) {
-        const nextButton = document.createElement("button");
-        nextButton.className = "next-episode-button";
-        nextButton.title = "Next Episode";
-        nextButton.innerHTML = `
-          <i class="bi bi-skip-forward-fill"></i>
-          <span>Next Episode</span>
-        `;
-        replayOverlay.insertBefore(nextButton, replayButton);
-      }
-    } else if (
-      !nextEpisode &&
-      replayOverlay.querySelector(".next-episode-button")
-    ) {
-      // Remove next episode button if no next episode
-      const nextButton = replayOverlay.querySelector(".next-episode-button");
-      if (nextButton) {
-        nextButton.remove();
-      }
+    // Remove all dynamic buttons first
+    const existingNextButton = replayOverlay.querySelector(
+      ".next-episode-button"
+    );
+    const existingWatchFromStartButton = replayOverlay.querySelector(
+      ".watch-from-start-button"
+    );
+    if (existingNextButton) existingNextButton.remove();
+    if (existingWatchFromStartButton) existingWatchFromStartButton.remove();
+
+    const replayButton = replayOverlay.querySelector(".replay-button");
+
+    // Add "Next Episode" button if needed
+    if (nextEpisode && replayButton) {
+      const nextButton = document.createElement("button");
+      nextButton.className = "next-episode-button";
+      nextButton.title = "Next Episode";
+      nextButton.innerHTML = `
+        <i class="bi bi-skip-forward-fill"></i>
+        <span>Next Episode</span>
+      `;
+      replayOverlay.insertBefore(nextButton, replayButton);
+    }
+
+    // Add "Watch from Start" button if this is the last episode
+    if (isLast && firstEpisode && replayButton) {
+      const watchFromStartButton = document.createElement("button");
+      watchFromStartButton.className = "watch-from-start-button";
+      watchFromStartButton.title = "Watch from Start";
+      watchFromStartButton.innerHTML = `
+        <i class="bi bi-arrow-counterclockwise"></i>
+        <span>Watch from Start</span>
+      `;
+      replayOverlay.insertBefore(watchFromStartButton, replayButton);
     }
   }
 
   // Set up click handlers
   const replayButton = replayOverlay.querySelector(".replay-button");
   const nextEpisodeButton = replayOverlay.querySelector(".next-episode-button");
+  const watchFromStartButton = replayOverlay.querySelector(
+    ".watch-from-start-button"
+  );
 
   if (replayButton) {
     // Remove existing listeners to avoid duplicates by cloning the button
@@ -1601,6 +1785,27 @@ function showReplayButton(video, contentId, episodeId) {
         nextEpisode,
       });
       playNextEpisode(nextEpisode, contentId);
+    });
+  }
+
+  if (watchFromStartButton && firstEpisode) {
+    // Remove existing listeners to avoid duplicates by cloning the button
+    const newWatchFromStartButton = watchFromStartButton.cloneNode(true);
+    watchFromStartButton.parentNode.replaceChild(
+      newWatchFromStartButton,
+      watchFromStartButton
+    );
+
+    // Add click handler
+    newWatchFromStartButton.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      console.log("Watch from Start button clicked", {
+        contentId,
+        episodeId,
+        firstEpisode,
+      });
+      playFirstEpisode(firstEpisode, contentId);
     });
   }
 
