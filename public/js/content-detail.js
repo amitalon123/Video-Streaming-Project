@@ -294,7 +294,6 @@ function attachSkipControls(video, options = {}) {
 
     // Touch double-tap to skip (works in native fullscreen)
     let lastTapTime = 0;
-    let lastTapX = 0;
     const doubleTapThresholdMs = 300;
     video.addEventListener(
       "touchend",
@@ -322,7 +321,6 @@ function attachSkipControls(video, options = {}) {
             e.preventDefault();
           }
           lastTapTime = now;
-          lastTapX = x;
         } catch {
           // ignore
         }

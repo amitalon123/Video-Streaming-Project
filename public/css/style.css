@@ -930,10 +930,6 @@ body {
   line-height: 1;
 }
 
-.skip-overlay .skip-btn.fs-toggle {
-  padding: 0 12px;
-}
-
 /* Show skip overlay only on hover over the video containers */
 .video-container:hover .skip-overlay,
 .episode-video-hidden:hover .skip-overlay,
